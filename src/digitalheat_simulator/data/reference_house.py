@@ -10,6 +10,8 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from digitalheat_simulator.domain.parameters import Provenance
+from digitalheat_simulator.domain.scenario import DemandPoint, Interval, ThermalDemandSeries
 from digitalheat_simulator.domain.thermal import ThermalInterval
 
 ZONE = ZoneInfo("Europe/Zurich")
@@ -30,6 +32,24 @@ class ReferenceDemand:
     weather_sha256: str
     weather_metadata: tuple[tuple[str, str], ...]
     transformation: str
+
+    def as_demand_series(self) -> ThermalDemandSeries:
+        return ThermalDemandSeries(
+            identifier="reconstructed-reference-house",
+            points=tuple(
+                DemandPoint(
+                    Interval(item.start, item.end),
+                    item.space_demand_kwh + item.hot_water_demand_kwh,
+                )
+                for item in self.intervals
+            ),
+            provenance=Provenance(
+                source=f"Open-Meteo supplied weather CSV SHA-256 {self.weather_sha256}",
+                unit="kWh",
+                applicability="2025 Basel reconstructed reference house",
+                transformation=self.transformation,
+            ),
+        )
 
 
 def load_weather(path: Path) -> tuple[tuple[WeatherSample, ...], str, tuple[tuple[str, str], ...]]:

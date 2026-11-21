@@ -29,12 +29,9 @@ def balance_interval(
     gross = rack.thermal_power_kw * duration if interval.rack_on else 0.0
     recovered = gross * rack.recovery_efficiency
     demand = interval.space_demand_kwh + interval.hot_water_demand_kwh
-    direct = min(demand, recovered)
-    discharge = min(opening_kwh, demand - direct)
-    backup = demand - direct - discharge
-    charge = min(recovered - direct, capacity_kwh - opening_kwh)
-    dumped = recovered - direct - charge
-    closing = opening_kwh + charge - discharge
+    direct, discharge, backup, charge, dumped, closing = balance_flows(
+        demand, recovered, capacity_kwh, opening_kwh
+    )
     result = ThermalResult(
         interval=interval,
         electrical_energy_kwh=electrical,
@@ -52,6 +49,24 @@ def balance_interval(
     result.validate_balances()
     _storage(capacity_kwh, closing)
     return result
+
+
+def balance_flows(
+    demand: float, recovered: float, capacity_kwh: float, opening_kwh: float
+) -> tuple[float, float, float, float, float, float]:
+    """Allocate local interval energy; charged energy cannot discharge until later."""
+    _storage(capacity_kwh, opening_kwh)
+    for name, value in (("demand", demand), ("recoverable heat", recovered)):
+        if not isfinite(value) or value < 0:
+            raise ValueError(f"{name} must be finite and nonnegative")
+    direct = min(demand, recovered)
+    discharge = min(opening_kwh, demand - direct)
+    backup = demand - direct - discharge
+    charge = min(recovered - direct, capacity_kwh - opening_kwh)
+    dumped = recovered - direct - charge
+    closing = opening_kwh + charge - discharge
+    _storage(capacity_kwh, closing)
+    return direct, discharge, backup, charge, dumped, closing
 
 
 def simulate(

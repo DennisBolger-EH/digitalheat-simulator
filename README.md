@@ -1,7 +1,7 @@
 # DigitalHeat Simulator
 
-M1 provides a deterministic, independently testable one-rack/one-house thermal
-kernel and an explicitly reconstructed reference baseline. The UI remains
+M2 extends the deterministic thermal kernel to independent local sites with
+configurable rack groups, house demand, and supplied pool demand. The UI remains
 minimal; it does not calculate results, edit parameters, or run jobs.
 
 ## Development
@@ -27,7 +27,10 @@ The lockfile fixes runtime and development dependency versions.
 - `config`: a parameter-configuration loader interface and a versioned JSON adapter.
   Other formats can implement the same boundary without changing the domain.
 - `data.reference_house`: weather ingestion and the M1 reference reconstruction.
+- `data.pool_demand`: supplied per-pool energy profiles; no physical pool model.
 - `simulation.thermal`: format- and UI-independent thermal energy balance.
+- `domain.scenario` and `simulation.scenario`: local site inputs, grouped
+  independent sites, per-site and aggregated energy flows.
 - `workload` and `finance`: future calculation and job execution modules.
 - `optimization`: future independently selectable objectives and optimizer.
   Annualized cost and heat-coverage/dumped-heat objectives are not implemented.
@@ -62,7 +65,41 @@ case without assessing applicability and obtaining approval.
 
 The eventual scheduler must use the same scheduling logic for annual simulation
 and a real job it can pause and resume. No scheduler, optimizer, financial model,
-or result persistence is implemented in M1.
+or result persistence is implemented in M2.
+
+## M2 site-local scenarios
+
+Heat, thermal storage, dumping and backup belong to the site where production
+and demand occur. Cross-site heat or storage transfer is prohibited. M2 models
+ideal local delivery with no local losses or capacity constraints; it does not
+implement distribution, scheduling or house-first dispatch. Callers explicitly
+assign racks and their on/off sequences to sites.
+
+`ThermalDemandSeries` contains nonnegative interval energies in kWh, timezone-
+aware interval boundaries, an identifier, and provenance with `unit="kWh"`.
+`ReferenceDemand.as_demand_series()` converts the M1 reconstructed house profile;
+`pool_demand()` accepts a caller-supplied per-pool series. Pool profiles are
+inputs, not inferred from house data or physical pool equations. No implicit
+resampling or missing-data replacement is performed.
+
+Construct a `Scenario` from a tuple of `SiteGroup` objects. Each group represents
+one or more identical independent sites: one supplied consumer series per site,
+local storage capacity and initial energy, and zero or more `RackGroup` objects.
+Each rack group has its own per-site count, electrical and thermal powers,
+recovery efficiency, and explicitly timed Boolean operating sequence. Site
+groups may have different rack counts, configurations, demand and storage.
+Different inputs or initial states must be separate groups. M2 represents one
+consumer series per site; a future multi-consumer site will need an explicit
+local allocation model.
+
+`simulate_scenario()` balances each representative site independently using the
+same local allocation as M1, then multiplies flows by group quantity and sums
+them by interval. Per-site-group results and scenario interval results are
+retained separately; site and rack counts derive from assigned groups.
+Timed demand and operation intervals must match by actual UTC instants across
+the scenario, including DST folds. No cross-site energy flow is permitted.
+Each site and aggregate interval checks the demand, recovered heat and storage
+balances and gross = recovered + unrecovered heat, with the M1 tolerances.
 
 ## M1 reconstructed reference baseline
 
