@@ -1,0 +1,1 @@
+"""Format-independent domain types."""

@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "digitalheat-simulator"
+version = "0.1.0"
+description = "Foundation for the DigitalHeat simulator"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "nicegui>=2,<4",
+    "plotly>=5,<7",
+    "pint>=0.24,<1",
+    "tzdata>=2024.1",
+]
+
+[project.scripts]
+digitalheat-simulator = "digitalheat_simulator.ui.main:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8,<10",
+    "ruff>=0.9,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/digitalheat_simulator"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
