@@ -1,5 +1,5 @@
 latitude,longitude,elevation,utc_offset_seconds,timezone,timezone_abbreviation
-47.557117,7.549342,247.0,3600,Europe/Berlin,GMT+1
+47.557117,7.549342,283.0,3600,Europe/Berlin,GMT+1
 
 time,temperature_2m (°C),direct_normal_irradiance (W/m²)
 2025-01-01T00:00,-3.2,0.0

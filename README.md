@@ -1,6 +1,7 @@
 # DigitalHeat Simulator
 
-M0 establishes a project foundation, not a simulator. The UI is intentionally
+M1 provides a deterministic, independently testable one-rack/one-house thermal
+kernel and an explicitly reconstructed reference baseline. The UI remains
 minimal; it does not calculate results, edit parameters, or run jobs.
 
 ## Development
@@ -25,9 +26,9 @@ The lockfile fixes runtime and development dependency versions.
   explicit unit conversion, and elapsed-time grids.
 - `config`: a parameter-configuration loader interface and a versioned JSON adapter.
   Other formats can implement the same boundary without changing the domain.
-- `data`: future dataset ingestion; CSV is planned for supplied tabular time series.
-- `simulation`, `workload`, and `finance`: future calculation and job execution
-  modules, independent of the UI.
+- `data.reference_house`: weather ingestion and the M1 reference reconstruction.
+- `simulation.thermal`: format- and UI-independent thermal energy balance.
+- `workload` and `finance`: future calculation and job execution modules.
 - `optimization`: future independently selectable objectives and optimizer.
   Annualized cost and heat-coverage/dumped-heat objectives are not implemented.
 - `application`: future use-case services coordinating domain and adapters.
@@ -42,7 +43,7 @@ semantics before claiming that actual simulation runs are reproducible.
 
 Time grids use half-open ranges of timezone-aware instants and advance in elapsed
 time, displaying instants in Europe/Zurich by default. Local DST days can have 23
-or 25 hours. This does not decide the reference-house heating-day rule.
+or 25 hours.
 
 The JSON adapter accepts a top-level `version` (currently `1`) and `groups` list.
 Each group has an `identifier` and `parameters`; each parameter has an
@@ -54,14 +55,49 @@ Provenance dates use ISO 8601 dates. Invalid input raises an error.
 
 `PROJECT_BRIEF.md` is authoritative. The supplied case materials under
 `case_materials\` describe the reference house and the requirement for one
-real locally controlled workload. Source materials are not runtime defaults.
-The supplied datasets and tariff material require identification and validation
-before use; heating-day DST treatment remains deferred until the reference
-profile is evaluated. Job arrival rates, workload measurement/scaling, pricing,
+real locally controlled workload. Job arrival rates, workload measurement/scaling, pricing,
 annualization, objective formulation, and other missing business rules require
 agreement before implementation. Pool data must not be borrowed from the house
 case without assessing applicability and obtaining approval.
 
 The eventual scheduler must use the same scheduling logic for annual simulation
-and a real job it can pause and resume. No scheduler, optimizer, simulation
-results, physical or financial model, or result persistence is implemented in M0.
+and a real job it can pause and resume. No scheduler, optimizer, financial model,
+or result persistence is implemented in M1.
+
+## M1 reconstructed reference baseline
+
+```powershell
+uv run python -m digitalheat_simulator.application.reference_baseline case_materials\open-meteo-47.56N7.55E283m.csv
+```
+
+The input is the supplied Open-Meteo weather export (SHA-256
+`cc99c5a387940e604bb8f7ffcb564397880f33586d54b8cc2764fb9b6b223693`);
+source context is in `case_materials\useful-load-useful-heat.txt` and
+https://open-meteo.com/en/docs/historical-weather-api. Publication/access dates
+for this export are not provided. Its metadata and SHA-256 are returned in the
+report. The export is not modified. This is a reconstructed baseline, **not**
+the unavailable official ready-made heat-demand profile.
+
+The approved interpretation maps every offset-free timestamp with the file's
+fixed UTC+01:00 offset to an instant, then to Europe/Zurich. Each temperature
+sample represents the following elapsed hour. A heating day is a Zurich local
+day whose mean of all actual samples is strictly below 12 °C, including 23 or
+25 samples on DST days. The case formula is
+`max(0, 10 kW * (20 °C - T) / 25.6 K)` on heating days, zero otherwise.
+There is no upper cap. Power times elapsed hours produces kWh.
+Hot water is 12 kWh per Zurich local day, divided uniformly over its actual
+hourly intervals. The baseline uses 1 kW electrical and 1 kW gross thermal
+power while on, 80% heat recovery, 35 kWh lossless storage with no transfer
+limits, explicit 0 kWh initial storage, and an explicitly always-on sequence.
+Rack electrical and thermal powers remain separate; no TFLOPS-to-income or
+utilization-to-power relationship is inferred.
+
+For each interval, direct recovered heat serves demand first; only the opening
+storage state may discharge to meet a shortfall; the remainder is backup heat.
+Surplus recoverable heat charges storage, and any remainder is dumped. Charged
+heat is available starting with the following interval. Backup energy is
+reported as required heat; the backup heater is not modeled. The kernel checks
+the demand, recoverable-heat, and storage balances for each interval using
+absolute tolerance 1e-9 kWh and relative tolerance 1e-12. Its values are
+explicitly named in kW or kWh; dimensionally checked conversion helpers are
+available for other input units.
