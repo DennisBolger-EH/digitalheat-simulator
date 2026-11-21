@@ -60,3 +60,47 @@ def test_rack_on_time_is_union_and_clipped_to_interval():
         rack_on_seconds(segments, RACK, START + timedelta(seconds=7), START + timedelta(seconds=12))
         == 5
     )
+
+
+def test_checkpoint_pause_only_on_work_step_and_completion_need_not_be_step():
+    from dataclasses import replace
+
+    a = replace(item("a", 2), required_work_tflop=25, pause_step_tflop=10)
+    validate_execution((a,), (RACK,), (segment(a, 0, 5), segment(a, 10, 17.5)))
+    with pytest.raises(ValueError, match="pause step"):
+        validate_execution((a,), (RACK,), (segment(a, 0, 4), segment(a, 10, 18.5)))
+
+
+@pytest.mark.parametrize("step", [None, 0])
+def test_arbitrary_pause_step(step):
+    from dataclasses import replace
+
+    a = replace(item("a", 2), pause_step_tflop=step)
+    validate_execution((a,), (RACK,), (segment(a, 0, 3), segment(a, 5, 10)))
+
+
+def test_horizon_checks_final_interruption_without_treating_horizon_as_pause():
+    from dataclasses import replace
+
+    checkpointed = replace(item("a", 2), pause_step_tflop=10)
+    with pytest.raises(ValueError, match="pause step"):
+        validate_execution(
+            (checkpointed,),
+            (RACK,),
+            (segment(checkpointed, 0, 4),),
+            horizon=START + timedelta(seconds=20),
+        )
+    validate_execution(
+        (checkpointed,),
+        (RACK,),
+        (segment(checkpointed, 0, 4),),
+        horizon=START + timedelta(seconds=4),
+    )
+    noninterruptible = replace(item("b", 2), interruptible=False)
+    with pytest.raises(ValueError, match="cannot stop"):
+        validate_execution(
+            (noninterruptible,),
+            (RACK,),
+            (segment(noninterruptible, 0, 4),),
+            horizon=START + timedelta(seconds=20),
+        )

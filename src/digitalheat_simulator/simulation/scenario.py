@@ -82,6 +82,37 @@ class ScenarioResult:
         )
 
 
+def energy_flows(
+    demand_kwh: float,
+    electrical_kwh: float,
+    gross_kwh: float,
+    recovered_kwh: float,
+    unrecovered_kwh: float,
+    capacity_kwh: float,
+    opening_kwh: float,
+) -> EnergyFlows:
+    """Apply the shared local balance to supplied interval energies."""
+    direct, discharge, backup, charge, dumped, closing = balance_flows(
+        demand_kwh, recovered_kwh, capacity_kwh, opening_kwh
+    )
+    flows = EnergyFlows(
+        demand_kwh,
+        electrical_kwh,
+        gross_kwh,
+        recovered_kwh,
+        unrecovered_kwh,
+        direct,
+        opening_kwh,
+        charge,
+        discharge,
+        closing,
+        dumped,
+        backup,
+    )
+    flows.validate_balances()
+    return flows
+
+
 def _simulate_site(site: SiteGroup) -> SiteResult:
     state = site.initial_storage_kwh
     results = []
@@ -107,31 +138,27 @@ def _simulate_site(site: SiteGroup) -> SiteResult:
             for r in site.racks
             if r.operation[index].on
         )
-        direct, discharge, backup, charge, dumped, closing = balance_flows(
-            demand.energy_kwh, recovered, site.storage_capacity_kwh, state
-        )
-        flows = EnergyFlows(
+        flows = energy_flows(
             demand.energy_kwh,
             electrical,
             gross,
             recovered,
             unrecovered,
-            direct,
+            site.storage_capacity_kwh,
             state,
-            charge,
-            discharge,
-            closing,
-            dumped,
-            backup,
         )
-        flows.validate_balances()
         results.append(flows)
-        state = closing
+        state = flows.storage_closing_kwh
     return SiteResult(site, tuple(results))
 
 
-def simulate_scenario(scenario: Scenario) -> ScenarioResult:
-    sites = tuple(_simulate_site(site) for site in scenario.sites)
+def aggregate_scenario(scenario: Scenario, sites: tuple[SiteResult, ...]) -> ScenarioResult:
+    """Aggregate already balanced site results with their site-group quantities."""
+    if len(sites) != len(scenario.sites) or any(
+        result.site != site or len(result.per_site_flows) != len(site.demand.points)
+        for result, site in zip(sites, scenario.sites, strict=True)
+    ):
+        raise ValueError("site results must match the scenario and its intervals")
     intervals = []
     for index, demand in enumerate(scenario.sites[0].demand.points):
         totals = {
@@ -145,3 +172,7 @@ def simulate_scenario(scenario: Scenario) -> ScenarioResult:
         flows.validate_balances()
         intervals.append(ScenarioIntervalResult(demand.interval, flows))
     return ScenarioResult(scenario, sites, tuple(intervals))
+
+
+def simulate_scenario(scenario: Scenario) -> ScenarioResult:
+    return aggregate_scenario(scenario, tuple(_simulate_site(site) for site in scenario.sites))

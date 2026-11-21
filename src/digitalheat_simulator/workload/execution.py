@@ -49,10 +49,27 @@ class ExecutionSegment:
             raise ValueError("delivered work must match rate times elapsed seconds")
 
 
+def on_pause_step(job: Job, completed: float) -> bool:
+    """Whether accumulated work lies on an allowed interruptible pause point."""
+    step = job.pause_step_tflop
+    if not step:
+        return True
+    tolerance = min(WORK_ABS_TOL_TFLOP + WORK_REL_TOL * abs(completed), step * 1e-7)
+    return abs(completed - round(completed / step) * step) <= tolerance
+
+
 def validate_execution(
-    jobs: tuple[Job, ...], racks: tuple[ComputeRack, ...], segments: tuple[ExecutionSegment, ...]
+    jobs: tuple[Job, ...],
+    racks: tuple[ComputeRack, ...],
+    segments: tuple[ExecutionSegment, ...],
+    *,
+    horizon: datetime | None = None,
 ) -> tuple[JobProgress, ...]:
     """Validate identities, placement, no overlap per job, capacity and work conservation."""
+    if horizon is not None:
+        if horizon.utcoffset() is None:
+            raise ValueError("execution horizon must be timezone-aware")
+        horizon = horizon.astimezone(UTC)
     jobs_by_id = {job.identifier: job for job in jobs}
     racks_by_id = {(rack.site_identifier, rack.identifier): rack for rack in racks}
     if len(jobs_by_id) != len(jobs) or len(racks_by_id) != len(racks):
@@ -66,6 +83,8 @@ def validate_execution(
         key = (segment.rack.site_identifier, segment.rack.identifier)
         if jobs_by_id.get(job.identifier) != job or racks_by_id.get(key) != segment.rack:
             raise ValueError("segment references an unknown or mismatched job or rack")
+        if horizon is not None and segment.end.astimezone(UTC) > horizon:
+            raise ValueError("segment extends beyond execution horizon")
         by_job[job.identifier].append(segment)
         rate = job.requested_rate_tflop_per_s
         events[key].append((segment.start.astimezone(UTC), 1, rate))
@@ -79,7 +98,9 @@ def validate_execution(
     progress = []
     for job in jobs:
         ordered = sorted(by_job[job.identifier], key=lambda item: item.start.astimezone(UTC))
+        completed_at_boundary = 0.0
         for previous, current in pairwise(ordered):
+            completed_at_boundary = fsum((completed_at_boundary, previous.delivered_work_tflop))
             if previous.end.astimezone(UTC) > current.start.astimezone(UTC):
                 raise ValueError("a job cannot execute concurrently on multiple racks")
             if (previous.rack.site_identifier, previous.rack.identifier) != (
@@ -91,11 +112,59 @@ def validate_execution(
                 UTC
             ):
                 raise ValueError("a non-interruptible job cannot have an execution gap")
+            if previous.end.astimezone(UTC) != current.start.astimezone(UTC) and not on_pause_step(
+                job, completed_at_boundary
+            ):
+                raise ValueError("job interruption does not coincide with a pause step")
         completed = fsum(segment.delivered_work_tflop for segment in ordered)
         if completed > job.required_work_tflop:
-            raise ValueError("execution exceeds job required work")
+            tolerance = min(
+                WORK_ABS_TOL_TFLOP + WORK_REL_TOL * job.required_work_tflop,
+                job.required_work_tflop * 1e-7,
+            )
+            if completed - job.required_work_tflop > tolerance:
+                raise ValueError("execution exceeds job required work")
+            completed = job.required_work_tflop
+        if (
+            horizon is not None
+            and ordered
+            and ordered[-1].end.astimezone(UTC) < horizon
+            and job.required_work_tflop - completed
+            > min(
+                WORK_ABS_TOL_TFLOP + WORK_REL_TOL * job.required_work_tflop,
+                job.required_work_tflop * 1e-7,
+            )
+        ):
+            if not job.interruptible:
+                raise ValueError("a non-interruptible job cannot stop before completion")
+            if not on_pause_step(job, completed):
+                raise ValueError("job interruption does not coincide with a pause step")
         progress.append(JobProgress(job, completed, job.required_work_tflop - completed))
     return tuple(progress)
+
+
+def union_seconds(intervals: list[tuple[datetime, datetime]]) -> float:
+    """Return elapsed seconds in the union of timezone-aware half-open intervals."""
+    normalized = []
+    for start, end in intervals:
+        if start.utcoffset() is None or end.utcoffset() is None:
+            raise ValueError("interval bounds must be timezone-aware")
+        start, end = start.astimezone(UTC), end.astimezone(UTC)
+        if end <= start:
+            raise ValueError("interval end must follow start")
+        normalized.append((start, end))
+    intervals = sorted(normalized)
+    if not intervals:
+        return 0.0
+    left, right = intervals[0]
+    duration = 0.0
+    for next_left, next_right in intervals[1:]:
+        if next_left <= right:
+            right = max(right, next_right)
+        else:
+            duration += (right - left).total_seconds()
+            left, right = next_left, next_right
+    return duration + (right - left).total_seconds()
 
 
 def rack_on_seconds(
@@ -117,15 +186,4 @@ def rack_on_seconds(
             right = min(end_utc, segment.end.astimezone(UTC))
             if left < right:
                 intervals.append((left, right))
-    intervals.sort()
-    if not intervals:
-        return 0.0
-    left, right = intervals[0]
-    duration = 0.0
-    for next_left, next_right in intervals[1:]:
-        if next_left <= right:
-            right = max(right, next_right)
-        else:
-            duration += (right - left).total_seconds()
-            left, right = next_left, next_right
-    return duration + (right - left).total_seconds()
+    return union_seconds(intervals)

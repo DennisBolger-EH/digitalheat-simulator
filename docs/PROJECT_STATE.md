@@ -18,12 +18,12 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
 
 - M0 foundation, M1 deterministic thermal kernel, and M2 multi-unit site-local
   scaling were accepted and committed. M1 and M2 remain mandatory regressions.
-- M3 compute workload, scheduling and thermal integration is approved but
-  **incomplete**. The worktree has uncommitted preliminary compute domain types,
-  execution-segment validation, and a rack ON-time union helper. There is no
-  scheduler, checkpoint enforcement, or compute/thermal integration yet.
-- **Next approved action:** complete the approved M3 scope below, verify it and
-  report results. Do not start M4 or commit without user authorization.
+- M3 foundation was committed as `b9fb0c0`. M3 completion is implemented in
+  uncommitted changes and awaiting user review; the largest benchmark timed out.
+  The scheduler, execution validation and compute-to-thermal integration are
+  ideal models, not the case's real-process demonstrator.
+- **Next approved action:** stop after the M3 report and wait for review. Do not
+  start M4 or commit without user authorization.
 
 ## Permanent decisions and approved assumptions
 
@@ -63,13 +63,18 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
   concurrent jobs do not duplicate electricity or heat. No job migration after
   placement in M3. Unfinished late jobs may continue; completion at the deadline
   is on time.
+- `None` and zero pause steps allow arbitrary-point pauses. Positive steps require
+  interruptions at step multiples; completion need not coincide with a multiple.
+  Pause/resume is simulated within a run, not persisted across separate runs;
+  real checkpoint storage and process control are not implemented.
 - Scheduler is consumer-type agnostic and a deterministic heuristic, not a global
   optimizer. Enforce release, eligibility, availability, capacity and permitted
   pauses first; protect predicted deadline feasibility before heat preference.
   Prefer lower predicted dumped heat, then greater remaining local opportunity,
   with earliest deadline and stable identifiers for ordering/ties. An earlier
   deadline may preempt at a permitted pause point. A running non-interruptible
-  job continues even if heat is dumped.
+  job continues even if heat is dumped. Deadline projection is greedy and cannot
+  guarantee global feasibility; available rack capacity is static within a run.
 - Per thermal interval, useful-heat budget is demand plus capacity minus opening
   storage, less already reserved recoverable heat, floored at zero. Reservations
   count unioned physical-rack ON time, not each concurrent job independently.
@@ -79,7 +84,10 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
 - Sub-hour scheduling produces execution segments; integrate ON energy per
   original thermal interval and use the existing balance once per interval.
   Uniform intrainterval availability is an approved approximation, not a sub-hour
-  tank model. Supply storage closing state to the next interval.
+  tank model. Supply storage closing state to the next interval. Compute-driven
+  scenarios use individually identified sites (quantity one), matching physical
+  rack inventories and off Boolean operation inputs; the original M2 operation
+  path remains available separately. Datetime event precision is microseconds.
 - Use synthetic execution inputs until real arrivals and throughput are supplied.
   Real-process execution, measurement and scheduler-controlled interruption are
   later work, though required by the sprintd case. Exclude finance/income, tariffs,
@@ -109,7 +117,11 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
 - Job arrivals, effective throughput, real workload runtime/energy measurements,
   and complete sheet-row interpretations are not defined. The official
   ready-made house profile remains unavailable; equivalence is unverified.
-- Last run on 2026-11-21: **89 pytest tests passed**, Ruff lint and format checks
-  passed; M1 annual run and existing M2 regression tests passed. M3 scheduling,
-  compute/thermal invariants and requested 100/10, 10,000/100 and 100,000/1,000
-  job/rack benchmarks have not been run because the scheduler is not implemented.
+- Last verification on 2026-11-21: **130 tests passed**, Ruff lint and format
+  checks passed, the M1 annual baseline was reproduced, and M2 regressions passed.
+- Synthetic annual benchmarks, traced Python allocations / Windows process peak
+  working set: 100 jobs/10 racks 2.117 s, 12.77 / 81.57 MiB; 10,000/100 and
+  100,000/1,000 each timed out after 60 s, at sampled peaks 9.80 / 64.13 MiB
+  and 59.08 / 225.40 MiB respectively. Larger cases are not demonstrated
+  practical; see `scripts/benchmark_m3.py` for the measurement method.
+  Repeated rack/eligibility and deadline-projection scans are bottlenecks.

@@ -1,8 +1,8 @@
 # DigitalHeat Simulator
 
-M2 extends the deterministic thermal kernel to independent local sites with
-configurable rack groups, house demand, and supplied pool demand. The UI remains
-minimal; it does not calculate results, edit parameters, or run jobs.
+M3 adds ideal compute execution and a deterministic, heat-aware reference
+scheduler to the independent site-local thermal model. The UI remains minimal;
+it does not calculate results, edit parameters, or run jobs.
 
 ## Project context
 
@@ -37,7 +37,8 @@ The lockfile fixes runtime and development dependency versions.
 - `simulation.thermal`: format- and UI-independent thermal energy balance.
 - `domain.scenario` and `simulation.scenario`: local site inputs, grouped
   independent sites, per-site and aggregated energy flows.
-- `workload` and `finance`: future calculation and job execution modules.
+- `workload`: ideal compute execution accounting and reference scheduling.
+- `finance`: future financial calculations.
 - `optimization`: future independently selectable objectives and optimizer.
   Annualized cost and heat-coverage/dumped-heat objectives are not implemented.
 - `application`: future use-case services coordinating domain and adapters.
@@ -69,19 +70,63 @@ annualization, objective formulation, and other missing business rules require
 agreement before implementation. Pool data must not be borrowed from the house
 case without assessing applicability and obtaining approval.
 
-The eventual scheduler must use the same scheduling logic for annual simulation
-and a real job it can pause and resume. No scheduler, optimizer, financial model,
-or result persistence is implemented in M2.
+The eventual demonstrator must use the same scheduling logic for annual simulation
+and a real job it can pause and resume. No real-job adapter, optimizer, financial
+model, or result persistence is implemented.
 
-## M3 work in progress
+## M3 ideal compute and scheduling
 
-The compute domain and execution-segment validation are preliminary. They do
-not schedule workloads, validate checkpoint positions, or integrate rack
-execution with thermal simulation. TFLOP is work; TFLOP/s is a rate. Rack
-compute capacity is independent of its electrical and thermal powers.
-Execution-segment validation checks rate capacity and work accounting;
-the rack ON-time helper unions concurrent execution segments to avoid
-double-counting, but is not yet wired into the thermal engine.
+`Job` specifies total work in TFLOP, a fixed requested rate in TFLOP/s, release,
+deadline, eligible sites and pause rules. `ComputeRack` distinguishes installed
+and available compute capacity from electrical and thermal power. Work equals
+rate times elapsed seconds; neither compute rate nor work is income.
+
+`workload.scheduler.schedule(scenario, jobs, racks)` returns execution segments,
+per-job progress and deadline outcomes, and integrated per-site and aggregate
+thermal results. The scenario must represent individually identified physical
+sites (`SiteGroup.quantity == 1`); the physical compute racks must match the
+site rack inventory, and explicit Boolean rack operations must be off to avoid
+mixing two operation sources. The original `simulate_scenario` Boolean-operation
+API remains unchanged. For externally supplied segments,
+`simulation.compute_thermal.simulate_execution` validates and integrates them
+without running the scheduler.
+
+The event-driven scheduler orders jobs by deadline and stable identifier.
+It enforces release, placement, fixed-rate capacity and pause constraints; a
+bounded lookahead protects projected deadline feasibility before ranking local
+heat opportunity. It is not a global optimizer or a guarantee that every
+feasible workload will meet its deadline. Late work can continue, and completion
+at the deadline is on time. No job migrates after placement. Running
+non-interruptible jobs continue to completion, including through thermal
+boundaries. Interruptible jobs with `None` or zero pause step can pause at any
+progress point; positive steps restrict pauses to multiples of the step, except
+that completion is always permitted. Real checkpoint persistence and process
+control are not implemented.
+
+For each site and interval, the scheduler uses `demand + storage capacity -
+opening storage` as the useful-heat budget, less heat reserved by physical rack
+ON-time unions. Candidates prefer less incremental dumped heat, then greater
+remaining opportunity, then stable site/rack identifiers; consumer kind is
+irrelevant. Critical work can run despite dumping. An admitted checkpoint step
+or non-interruptible job may continue across an interval boundary when the next
+interval has less opportunity. Compute events use elapsed UTC time with Python
+datetime's microsecond resolution; unrepresentable execution or pause durations
+are rejected rather than silently rounded outside work tolerances.
+
+The integration counts overlapping jobs on the same rack once, aggregates actual
+ON seconds to each thermal interval, then reuses the M2 site-local balance.
+Demand and rack heat are treated as uniformly available within that interval;
+this is not a sub-hour tank model. Rack usage reports work, ON time and
+available-capacity utilization over the period and while ON; utilization is
+undefined (`None`) when the corresponding capacity-time denominator is zero.
+The scheduler does not resume saved progress across separate runs.
+
+Repeatable synthetic annual benchmarks are available via
+`uv run python scripts\benchmark_m3.py --jobs 100 --racks 10 --timeout 60`;
+they use Python allocation tracing, Windows process peak working set and a
+bounded child process, not measured real-job data. The benchmark currently
+requires Windows.
+
 `case_materials\compute-users-snapshot.csv` records the supplied
 [ComputeUsers sheet](https://docs.google.com/spreadsheets/d/1kABU3xqjJ45U9bOY2UiuPWKNoFXd40pA8I6Qoe57P6w/edit?gid=977748296)
 as accessed on 2026-11-21; blank cells remain unresolved, not zero. The user
@@ -98,8 +143,7 @@ ideal local delivery with no local losses or capacity constraints; it does not
 implement distribution, scheduling or house-first dispatch. Callers explicitly
 assign racks and their on/off sequences to sites.
 
-`ThermalDemandSeries` contains nonnegative interval energies in kWh, timezone-
-aware interval boundaries, an identifier, and provenance with `unit="kWh"`.
+`ThermalDemandSeries` contains nonnegative interval energies in kWh, timezone - aware interval boundaries, an identifier, and provenance with `unit="kWh"`.
 `ReferenceDemand.as_demand_series()` converts the M1 reconstructed house profile;
 `pool_demand()` accepts a caller-supplied per-pool series. Pool profiles are
 inputs, not inferred from house data or physical pool equations. No implicit
