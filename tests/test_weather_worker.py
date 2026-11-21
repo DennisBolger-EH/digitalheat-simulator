@@ -135,3 +135,51 @@ def test_worker_cancellation_and_corrupt_checkpoint(tmp_path: Path):
         worker.close()
         if restored is not None:
             restored.close()
+
+
+@pytest.mark.skipif(not WEATHER.exists(), reason="user-supplied weather CSV is not present")
+def test_registered_worker_rejects_duplicate_and_wrong_identity(tmp_path: Path):
+    args = [
+        sys.executable,
+        "-m",
+        "digitalheat_simulator.workload.weather_worker",
+        "--weather",
+        str(WEATHER.resolve()),
+        "--output",
+        str(tmp_path / "result.json"),
+        "--checkpoint",
+        str(tmp_path / "checkpoint.json"),
+        "--block-size",
+        "24",
+        "--replicates",
+        "1000",
+        "--seed",
+        "19",
+        "--execution-id",
+        "test-id",
+    ]
+    process = subprocess.Popen(
+        args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+    try:
+        assert process.stdin is not None and process.stdout is not None
+        assert json.loads(process.stdout.readline())["event"] == "waiting"
+
+        def send(command, sequence, execution_id="test-id"):
+            process.stdin.write(
+                json.dumps({"command": command, "sequence": sequence, "execution_id": execution_id})
+                + "\n"
+            )
+            process.stdin.flush()
+            return json.loads(process.stdout.readline())
+
+        assert send("start", 1)["event"] == "ready"
+        assert send("status", 2)["event"] == "status"
+        assert send("status", 2)["event"] == "error"
+        assert send("status", 3, "wrong-id")["event"] == "error"
+        assert send("cancel", 3)["event"] == "cancelled"
+        assert process.wait(timeout=10) == 0
+    finally:
+        if process.poll() is None:
+            process.terminate()
+        process.communicate(timeout=10)

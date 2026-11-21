@@ -15,7 +15,7 @@ from digitalheat_simulator.domain.scenario import (
     ThermalDemandSeries,
 )
 from digitalheat_simulator.domain.thermal import Rack
-from digitalheat_simulator.workload.scheduler import schedule
+from digitalheat_simulator.workload.scheduler import live_single_rack_decision, schedule
 
 START = datetime(2025, 1, 1, tzinfo=UTC)
 THERMAL = Rack(1, 1, 0.8)
@@ -66,6 +66,24 @@ def test_no_jobs():
     result = schedule(Scenario((make_site("house", [1]),)), (), (rack(),))
     assert result.segments == ()
     assert result.integrated.thermal.intervals[0].flows.backup_heat_kwh == 1
+
+
+@pytest.mark.parametrize(("demand", "deadline"), [(1, 7200), (0, 7200), (0, 900)])
+def test_live_single_rack_decision_matches_reference_admission(demand, deadline):
+    scenario = Scenario((make_site("house", [demand]),))
+    item = job(deadline=deadline)
+    physical_rack = rack()
+    ideal = schedule(scenario, (item,), (physical_rack,))
+    live = live_single_rack_decision(
+        now=START,
+        interval_end=START + timedelta(hours=1),
+        deadline=item.deadline,
+        estimated_remaining_seconds=900,
+        opportunity_kwh=demand,
+        rack=physical_rack,
+    )
+    starts_now = bool(ideal.segments and ideal.segments[0].start == START)
+    assert (live is not None) == starts_now
 
 
 def test_reference_fractional_hour_and_work_conservation():

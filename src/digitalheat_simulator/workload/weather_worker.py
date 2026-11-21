@@ -43,9 +43,19 @@ def run_worker(
     replicates: int,
     seed: int,
     restore: bool,
+    execution_id: str | None = None,
 ) -> None:
     if replicates < 1:
         raise ValueError("replicates must be positive")
+    start_sequence = None
+    initialization_started = None
+    if execution_id is not None:
+        _emit("waiting", execution_id=execution_id, pid=os.getpid())
+        start = json.loads(sys.stdin.readline())
+        if start != {"command": "start", "execution_id": execution_id, "sequence": 1}:
+            raise ValueError("invalid start authorization")
+        start_sequence = 1
+        initialization_started = time.monotonic_ns()
     analysis = WeatherAnalysis.load(weather, block_size)
     identity = {
         "version": ALGORITHM_VERSION,
@@ -89,15 +99,27 @@ def run_worker(
     threading.Thread(target=read_commands, daemon=True).start()
     running = False
     active_started = 0
-    active_ns = 0
-
-    def elapsed_ns() -> int:
-        return active_ns + (time.monotonic_ns() - active_started if running else 0)
+    active_ns = (
+        0 if initialization_started is None else time.monotonic_ns() - initialization_started
+    )
 
     def report(event: str, **fields: object) -> None:
-        _emit(event, progress=len(results), active_ns=elapsed_ns(), **fields)
+        now = time.monotonic_ns()
+        elapsed = active_ns + (now - active_started if running else 0)
+        if execution_id is not None:
+            fields["execution_id"] = execution_id
+            fields["monotonic_ns"] = now
+        _emit(event, progress=len(results), active_ns=elapsed, **fields)
 
-    report("ready", identity=identity, restored=restore, pid=os.getpid())
+    report(
+        "ready",
+        identity=identity,
+        restored=restore,
+        pid=os.getpid(),
+        sequence=start_sequence,
+        initialization_start_ns=initialization_started,
+    )
+    last_sequence = 1
     while True:
         try:
             message = commands.get(block=not running, timeout=None if not running else 0)
@@ -108,6 +130,15 @@ def run_worker(
             return
         command = message.get("command")
         sequence = message.get("sequence")
+        if execution_id is not None and message:
+            if (
+                message.get("execution_id") != execution_id
+                or type(sequence) is not int
+                or sequence != last_sequence + 1
+            ):
+                report("error", sequence=sequence, reason="invalid execution ID or sequence")
+                continue
+            last_sequence = sequence
         if command == "resume":
             if running:
                 report("error", sequence=sequence, reason="already running")
@@ -145,8 +176,6 @@ def run_worker(
             results.append([intercept, slope])
             report("progress")
             if len(results) == replicates:
-                active_ns += time.monotonic_ns() - active_started
-                running = False
                 _write_atomic(
                     output,
                     {
@@ -155,7 +184,10 @@ def run_worker(
                         "regressions": results,
                     },
                 )
-                report("completed", output_sha256=hashlib.sha256(output.read_bytes()).hexdigest())
+                output_sha256 = hashlib.sha256(output.read_bytes()).hexdigest()
+                active_ns += time.monotonic_ns() - active_started
+                running = False
+                report("completed", output_sha256=output_sha256)
                 return
 
 
@@ -168,6 +200,7 @@ def main() -> None:
     parser.add_argument("--replicates", type=int, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--restore", action="store_true")
+    parser.add_argument("--execution-id")
     args = parser.parse_args()
     run_worker(
         args.weather,
@@ -177,6 +210,7 @@ def main() -> None:
         args.replicates,
         args.seed,
         args.restore,
+        args.execution_id,
     )
 
 

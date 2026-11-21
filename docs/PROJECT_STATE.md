@@ -22,34 +22,50 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
 - M3 is the accepted deterministic ideal compute/scheduling and
   compute-to-thermal integration baseline. Its foundation was committed as
   `b9fb0c0` and its completion as `b673f29`.
-- M4 real computational workload and process-control integration was approved
-  and is **in progress, not complete or accepted**. The sprintd-required
-  scheduler-controlled real-process demonstrator remains unimplemented.
+- M4 real computational workload and process-control integration is implemented
+  for the narrow local demonstration and **awaiting review; not accepted or
+  committed**. It does not complete the entire sprintd case.
 
-## M4 work in progress
+## M4 demonstrator and limitations
 
 - The selected workload is local CPU analysis of the supplied weather data:
   temperature summary and seeded block-bootstrap regression of temperature
-  against irradiance. The internal worker can acknowledge cooperative
-  pause/resume, write a checksum-checked checkpoint, and restore it; its test
-  verifies unchanged progress during an acknowledged pause and identical output
-  after restart. Regression does not imply causation.
-- `simulate_rack_intervals` integrates physical rack ON interval unions into
-  the existing site-local thermal balance without fabricating ideal TFLOP work.
-  Its power inputs are configured, not measured.
-- This is not an end-to-end demonstrator: a real execution adapter with safe
-  Windows process-tree containment, live M3 scheduler decisions and
-  acknowledgement feedback, monotonic occupancy-to-thermal accounting,
-  calibration/provenance, execution journal, and a complete demonstration are
-  still needed. The worker's file replacement and checksum do not establish
-  checkpoint durability across machine or power failure. It is not yet a safe
-  public process-execution interface.
-- The planned physical energy report must keep measured progress and runtime,
-  configured power and efficiency, estimated electrical energy, and derived
-  thermal values separate. Missing power must yield unavailable energy, not zero.
-- Last M4 work-in-progress verification: 137 tests passed, Ruff lint and format
-  passed, and the M1 annual reference values remained unchanged. This does not
-  establish M4 acceptance.
+  against irradiance; this does not establish causation. Checkpoint restore is
+  checksum- and identity-validated and has a deterministic regression test;
+  replacement and checksums do not guarantee survival of power failure.
+- The private Windows adapter gates useful work until the launcher and actual
+  Python worker are contained in a kill-on-close job object. It validates
+  execution IDs and command sequences, waits for acknowledgements, journals
+  failures and uncertain periods, and never reattaches to a stored PID.
+  The coordinator shares the M3 heat/deadline admission rule for a single
+  arbitrary-pause job on an eligible rack, not the entire M3 multi-job policy.
+  Callers must reevaluate on signal changes and at the returned permitted end.
+- A 200,000-replicate real run took 40.438 s wall time and measured 36.578 s
+  active runtime. Progress was 16,518 before the pause request, 16,580 at the
+  acknowledgement, still 16,580 after a 3 s pause, and 200,000 at completion.
+  Synthetic heat opportunity changes drove run/pause/resume; a checkpoint
+  was confirmed at 16,580 and output hash, shape, summary and three regression
+  samples were validated. No process restart occurred in this run.
+- Configured reference rack, not measured host power: 1 kW electrical, 1 kW
+  gross thermal and 0.8 recovery. From measured active runtime, electrical and
+  gross thermal energy are each estimated as 0.0101605556 kWh; recoverable
+  heat is derived as 0.0081284444 kWh. At the assigned synthetic site
+  0.0081248889 kWh was directly used and 0.0000035556 kWh dumped during the
+  pause-request delay; a second site received zero heat. Initialization and
+  output writing count as active; checkpoint writing, paused waiting and
+  controller-side validation do not. Missing power remains unavailable, not zero.
+- Local evidence is in ignored `artifacts\m4\dbc4a2f2359e4b42834fc5acdcb1607c`
+  (`journal.json`, `checkpoint.json`, `result.json`); the journal records
+  input hash, parameters, command sequence, active intervals and classifications.
+  These artifacts are not committed. TFLOP and effective-rate calibration are
+  unavailable; no work is inferred from runtime or utilization.
+- M4 verification: 151 tests passed and Ruff lint and format passed; M1/M2/M3
+  regressions passed. Cooperative cancellation, abnormal exit, failed
+  containment, timeout, forced child-tree cleanup, atomic journal replacement,
+  checkpoint restart/corruption and site isolation were exercised by tests.
+  The complete case still requires two specified workload types, sourced
+  arrivals and scaling to the reference server, broader annual/financial
+  demonstrator features and the remaining project milestones.
 
 ## Permanent decisions and approved assumptions
 

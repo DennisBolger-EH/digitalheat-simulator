@@ -70,11 +70,48 @@ annualization, objective formulation, and other missing business rules require
 agreement before implementation. Pool data must not be borrowed from the house
 case without assessing applicability and obtaining approval.
 
-The eventual demonstrator must use the same scheduling logic for annual simulation
-and a real job it can pause and resume. An internal weather-analysis worker and
-observed-rack thermal integration are work in progress, but there is no
-production-ready real-job adapter, live scheduler integration, execution journal,
-optimizer, or financial model. The worker alone is not the case demonstrator.
+M4 provides a narrow real-process demonstration using the M3 single-rack
+heat/deadline admission rule. The complete case demonstrator, optimizer and
+financial model remain unfinished.
+
+## M4 local workload demonstration
+
+On Windows, run:
+
+```powershell
+uv run python -m digitalheat_simulator.application.real_demo --weather case_materials\open-meteo-47.56N7.55E283m.csv --output-root artifacts\m4
+```
+
+The registered worker computes a temperature summary and seeded block-bootstrap
+regressions against irradiance; correlation is not causation. The demonstration
+uses synthetic local heat signals and explicitly configured reference-rack
+electrical power of 1 kW, gross thermal power of 1 kW and recovery efficiency
+of 0.8. These are **not measurements** of the VM or host. The versioned JSON
+journal records measured replicate progress and monotonic active runtime,
+estimated electrical and gross thermal energy, and derived recoverable heat.
+TFLOP work and effective throughput remain unavailable. Missing power inputs
+produce unavailable energy values, not zero.
+
+The live coordinator reuses M3's heat/deadline admission rule for one eligible
+single-rack arbitrary-pause job; it does not implement M3's multi-job placement,
+capacity contention or future-job projection. The caller must reevaluate when
+the thermal signal changes or the returned permitted end is reached. The
+demonstration uses bounded synthetic signals, not an annual real-time run.
+Observed active intervals enter the existing site-local thermal balance; another
+site receives no heat. Initialization and result writing are counted as active;
+paused time, checkpoint writing and controller-side output validation are not.
+Pausing is cooperative and the checkpoint is not a power-failure durability
+guarantee.
+
+Each execution has an isolated directory containing `journal.json`,
+`checkpoint.json` and `result.json`. The adapter uses a Windows kill-on-close
+job object and authorizes useful work only after containment. It attempts
+cooperative cancellation before abnormal forced cleanup. A stored PID is never
+used to reattach; recovery creates a new worker from a checksum- and
+identity-validated checkpoint. The output validation checks the input identity,
+output hash and shape, temperature summary, and three deterministic regression
+samples, not a full independent recomputation. `artifacts\` is ignored by Git;
+copy desired evidence elsewhere before cleaning local artifacts.
 
 ## M3 ideal compute and scheduling
 

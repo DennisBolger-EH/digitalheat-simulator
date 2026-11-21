@@ -110,6 +110,76 @@ def _heat_per_second(rack: ComputeRack) -> float:
     return rack.thermal.thermal_power_kw * rack.thermal.recovery_efficiency / 3600
 
 
+def _heat_limited_end(
+    now: datetime,
+    wanted: datetime,
+    opportunity: float,
+    incremental: float,
+    heat_rate: float,
+    existing_seconds: float,
+    *,
+    urgent: bool,
+    interruptible: bool,
+    stepped: bool,
+) -> datetime | None:
+    """Apply the reference policy's deadline-first local-heat admission rule."""
+    if not urgent and incremental > opportunity + 1e-12:
+        if interruptible and stepped:
+            return None
+        if not interruptible:
+            if opportunity <= 1e-12:
+                return None
+        elif heat_rate:
+            allowable = existing_seconds + opportunity / heat_rate
+            wanted = min(wanted, now + timedelta(seconds=allowable))
+            if wanted <= now:
+                return None
+    return wanted
+
+
+def live_single_rack_decision(
+    *,
+    now: datetime,
+    interval_end: datetime,
+    deadline: datetime,
+    estimated_remaining_seconds: float,
+    opportunity_kwh: float,
+    rack: ComputeRack,
+) -> datetime | None:
+    """Reference heat/deadline policy for one arbitrary-pause live job.
+
+    The remaining-time estimate is a workload-specific planning input, not a
+    TFLOP measurement. Re-evaluate on every acknowledgement or signal change.
+    """
+    from math import isfinite
+
+    if any(value.utcoffset() is None for value in (now, interval_end, deadline)):
+        raise ValueError("times must be timezone-aware")
+    if interval_end <= now:
+        raise ValueError("interval must end after now")
+    if (
+        not isfinite(estimated_remaining_seconds)
+        or estimated_remaining_seconds <= 0
+        or not isfinite(opportunity_kwh)
+        or opportunity_kwh < 0
+    ):
+        raise ValueError("remaining duration must be positive and opportunity nonnegative")
+    wanted = now + timedelta(seconds=estimated_remaining_seconds)
+    rate = _heat_per_second(rack)
+    incremental = (min(interval_end, wanted) - now).total_seconds() * rate
+    return _heat_limited_end(
+        now,
+        wanted,
+        opportunity_kwh,
+        incremental,
+        rate,
+        0,
+        urgent=now >= deadline - timedelta(seconds=estimated_remaining_seconds),
+        interruptible=True,
+        stepped=False,
+    )
+
+
 def _project_finish(
     target: _State,
     now: datetime,
@@ -418,20 +488,19 @@ def schedule(
                 ) = min(choices)
                 if earlier_conflicts or (conflicts and not urgent):
                     continue
-                heat_rate = _heat_per_second(rack)
-                if not urgent and incremental > opportunity + 1e-12:
-                    if job.interruptible and job.pause_step_tflop:
-                        continue
-                    if not job.interruptible:
-                        if opportunity <= 1e-12:
-                            continue
-                    elif heat_rate:
-                        allowable = (
-                            reservations.rack_seconds.get(_key(rack), 0.0) + opportunity / heat_rate
-                        )
-                        wanted = min(wanted, now + timedelta(seconds=allowable))
-                        if wanted <= now:
-                            continue
+                wanted = _heat_limited_end(
+                    now,
+                    wanted,
+                    opportunity,
+                    incremental,
+                    _heat_per_second(rack),
+                    reservations.rack_seconds.get(_key(rack), 0.0),
+                    urgent=urgent,
+                    interruptible=job.interruptible,
+                    stepped=bool(job.pause_step_tflop),
+                )
+                if wanted is None:
+                    continue
                 reservations.reserve(state, rack, wanted)
 
             next_time = end
