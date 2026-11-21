@@ -22,9 +22,11 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
 - M3 is the accepted deterministic ideal compute/scheduling and
   compute-to-thermal integration baseline. Its foundation was committed as
   `b9fb0c0` and its completion as `b673f29`.
-- M4 real computational workload and process-control integration is implemented
-  for the narrow local demonstration and **awaiting review; not accepted or
-  committed**. It does not complete the entire sprintd case.
+- M4 real computational workload and process-control integration was accepted
+  and committed as `1886f51` (worker foundation `cf593f2`). It does not
+  complete the entire sprintd case.
+- M5 economic and compute-income model is implemented and **awaiting review;
+  not accepted or committed**. M6 optimization has not started.
 
 ## M4 demonstrator and limitations
 
@@ -66,6 +68,45 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
   The complete case still requires two specified workload types, sourced
   arrivals and scaling to the reference server, broader annual/financial
   demonstrator features and the remaining project milestones.
+
+## M5 economics
+
+- Finance accepts M2 site-local results, M3 integrated results, or M4 observed
+  rack intervals with their physical rack inventory. It retains configured
+  inputs/provenance, handles flat and aligned interval tariffs, explicit fixed
+  and quantity-based costs including conditional bounds, and does not infer
+  sold hours from rack ON time. Sold hours may not exceed unioned physical rack
+  hours. Output identifies simulated versus estimated energy; no M4 energy is
+  represented as physically metered.
+- The supplied 2026 IWB Basel H4 screenshot shows 33.25 Rp/kWh, i.e.
+  0.3325 CHF/kWh; access date unknown. The case heat-pump efficiency 2.5
+  implies 0.133 CHF/kWh useful-heat value and backup price for that reference
+  house. Do not silently use these assumptions for pools or other sites.
+- Case break-even is `(rack electricity cost - useful heat value) / sold
+  server-hours`, independently of CAPEX/service. Full-cost break-even is a
+  separate figure. CAPEX and annual service/other OPEX accept fixed and
+  quantity-dependent inputs. Annualized CAPEX uses the approved annuity with
+  configured lifetime and discount rate, or straight-line when the rate is
+  zero. Full-year results require a complete Zurich calendar year; shorter
+  periods are not extrapolated. Empty cost lists explicitly mean zero;
+  absent lists and parameters mean unavailable.
+- Useful heat is direct delivery plus local storage discharge, not charging
+  or dumped heat. Unknown opening storage origin makes discharged-heat value
+  unavailable unless explicitly attributed to servers. Absolute cash
+  contribution includes residual backup cost and does not also subtract
+  avoided backup cost; heat revenue and avoided-heat perspectives are
+  mutually exclusive. The avoided-heat full-cost break-even is incremental
+  versus no-server heating; heat-revenue mode uses absolute backup cost.
+- On the M1 reconstructed reference year, simulated electricity is 8,760 kWh,
+  electricity cost CHF 2,912.70, useful heat 6,105 kWh, derived useful-heat
+  value CHF 811.965 and backup cost CHF 3,341.760078125. Sold hours and actual
+  compute prices are unknown. With explicitly illustrative 8,760 sold hours,
+  the case break-even is 0.2398099315 CHF/server-hour, not a market price or
+  observed sale. Full-cost break-even remains unavailable without costs,
+  lifetime, discount rate, and service/other OPEX assumptions.
+- M5 verification: 165 tests passed, including M1–M4 regressions; Ruff lint
+  and format passed. The reference economic calculation was run with known
+  inputs and separately with explicitly illustrative sold hours.
 
 ## Permanent decisions and approved assumptions
 
@@ -157,8 +198,11 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
 ## Open questions and last verification
 
 - Job arrivals, effective throughput, real workload runtime/energy measurements,
-  and complete sheet-row interpretations are not defined. The official
-  ready-made house profile remains unavailable; equivalence is unverified.
+  and complete sheet-row interpretations are not defined. Actual sold hours,
+  compute sale price, rack/other hardware and installation costs, service and
+  other OPEX, lifetime and discount rate, and pool tariffs/heat values remain
+  unresolved. The official ready-made house profile remains unavailable;
+  equivalence is unverified.
 - Last verification on 2026-11-21: **130 tests passed**, Ruff lint and format
   checks passed, the M1 annual baseline was reproduced, and M2 regressions passed.
 - Synthetic annual benchmarks, traced Python allocations / Windows process peak

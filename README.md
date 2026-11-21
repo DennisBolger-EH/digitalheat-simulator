@@ -38,7 +38,7 @@ The lockfile fixes runtime and development dependency versions.
 - `domain.scenario` and `simulation.scenario`: local site inputs, grouped
   independent sites, per-site and aggregated energy flows.
 - `workload`: ideal compute execution accounting and reference scheduling.
-- `finance`: future financial calculations.
+- `finance`: explicit site-local tariffs, cost inputs and economic calculations.
 - `optimization`: future independently selectable objectives and optimizer.
   Annualized cost and heat-coverage/dumped-heat objectives are not implemented.
 - `application`: future use-case services coordinating domain and adapters.
@@ -71,8 +71,69 @@ agreement before implementation. Pool data must not be borrowed from the house
 case without assessing applicability and obtaining approval.
 
 M4 provides a narrow real-process demonstration using the M3 single-rack
-heat/deadline admission rule. The complete case demonstrator, optimizer and
-financial model remain unfinished.
+heat/deadline admission rule. M5 adds a calculation-only finance model. The
+complete case demonstrator and optimizer remain unfinished.
+
+## M5 economic calculations
+
+`finance.model.evaluate` accepts an M2 `ScenarioResult` or M3
+`IntegratedResult` plus `Economics` inputs, and returns itemized amounts with
+units in their names and an unavailable reason where an input is missing. For
+M4 observed occupancy, supply both `observed_intervals` and `observed_racks`;
+the thermal result must match those intervals. Intervals are unioned per
+physical rack. The result labels these energy quantities estimated, whereas
+M2/M3 energy is simulated; neither is a physical meter reading.
+
+Use explicit provenance-bearing `Parameter` values. Six extensible groups can be
+mapped using `economics_from_groups`: `hardware_costs`, `installation_costs`,
+`running_service_costs`, `energy_costs`, `finance_parameters`, and
+`compute_income`. Cost keys are `fixed`, `per_rack`, `per_site`, `per_house`,
+`per_pool`, with `service_` or `other_` prefixes for running costs. Prices
+must use the corresponding `CHF`, `CHF/rack`, `CHF/site`, `CHF/house`,
+`CHF/pool`, or per-year unit. Site-specific energy keys are
+`electricity_price:<site>`, `heat_value:<site>` and `backup_price:<site>` in
+`CHF/kWh`; finance keys are `lifetime_years`, `discount_rate`, and compute
+keys are `sold_server_hours`, `price_per_server_hour`. For explicit zero costs,
+use a provenance-bearing true `no_costs`, `service_no_costs` or
+`other_no_costs`; an omitted input is unknown. Unrelated groups remain allowed.
+The direct API additionally supports per-interval prices and additive cost
+lines with inclusive quantity bounds. Price intervals must match exactly.
+
+Physical rack ON time is not automatically sold. Sold server-hours must be
+explicitly configured and no greater than the unioned physical rack hours.
+Income is sold hours times configured CHF/server-hour, never installed TFLOP/s.
+Useful heat is direct supply plus storage discharge, not heat merely stored or
+dumped. If opening storage's server-heat origin is unknown and storage is
+discharged, useful-heat-dependent results are unavailable unless its origin is
+explicitly established. No heat is transferred between sites.
+
+The case break-even is `(electricity cost - useful heat value) / sold hours`;
+it deliberately excludes CAPEX and service. Full-cost break-even is separate:
+for avoided-heat mode it is incremental cost versus the no-server heating
+baseline; for heat-revenue mode it uses absolute site costs including residual
+backup, less heat revenue. Absolute cash contribution and annualized total cost
+include residual backup cost and do not subtract avoided heat a second time.
+Avoided value and heat revenue are mutually exclusive scenario perspectives.
+Zero sold hours yields an unavailable break-even; negative values are retained.
+Annual service/OPEX and annualized total cost require a complete Zurich
+calendar year. A shorter period is not extrapolated. Annualized CAPEX uses
+the configured discount rate and lifetime, with straight-line CAPEX/lifetime
+for a zero discount rate.
+
+Reproduce the known reference figures without inventing costs or sale prices:
+
+```powershell
+uv run python -m digitalheat_simulator.application.reference_economics case_materials\open-meteo-47.56N7.55E283m.csv
+```
+
+For an illustrative—not actual—sale, add `--example-sold-hours 8760`. The
+reference tariff is the supplied 2026 IWB H4 screenshot's 33.25 Rp/kWh
+(0.3325 CHF/kWh); the access date is unknown. The case heat-pump efficiency
+2.5 gives a derived heat value and backup price of 0.133 CHF/kWh. These
+reference-house inputs are not automatically applied to pools. CAPEX,
+service, lifetime, discount rate, sale price and other unsupplied costs remain
+unavailable until explicitly configured. The reference baseline is reconstructed,
+not the unavailable official ready-made house profile.
 
 ## M4 local workload demonstration
 
