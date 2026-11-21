@@ -3,6 +3,7 @@
 import argparse
 import json
 import time
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -25,7 +26,12 @@ from digitalheat_simulator.workload.real_worker import WeatherWorker
 
 
 def run(
-    weather: Path, root: Path, replicates: int, pre_pause: float, paused_seconds: float
+    weather: Path,
+    root: Path,
+    replicates: int,
+    pre_pause: float,
+    paused_seconds: float,
+    on_created: Callable[[Path], None] | None = None,
 ) -> Path:
     if pre_pause <= 0 or paused_seconds <= 0:
         raise ValueError("demonstration durations must be positive")
@@ -39,6 +45,8 @@ def run(
         gross_kw=1.0,
         efficiency=0.8,
     )
+    if on_created is not None:
+        on_created(worker.journal)
     thermal = Rack(1.0, 1.0, 0.8)
     rack = ComputeRack("reference-rack", "weather-site", thermal, 1, 1)
     start_clock = time.monotonic()

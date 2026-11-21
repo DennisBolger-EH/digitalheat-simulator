@@ -1,8 +1,7 @@
 # DigitalHeat Simulator
 
-M3 adds ideal compute execution and a deterministic, heat-aware reference
-scheduler to the independent site-local thermal model. The UI remains minimal;
-it does not calculate results, edit parameters, or run jobs.
+The local NiceGUI demonstrator provides Dashboard, Optimization and Real
+Workload views over the M1–M6 models.
 
 ## Project context
 
@@ -39,10 +38,9 @@ The lockfile fixes runtime and development dependency versions.
   independent sites, per-site and aggregated energy flows.
 - `workload`: ideal compute execution accounting and reference scheduling.
 - `finance`: explicit site-local tariffs, cost inputs and economic calculations.
-- `optimization`: future independently selectable objectives and optimizer.
-  Annualized cost and heat-coverage/dumped-heat objectives are not implemented.
-- `application`: future use-case services coordinating domain and adapters.
-- `ui`: minimal NiceGUI entry point. Plotly is installed for later visualization.
+- `optimization`: independently selectable economic and thermal grid searches.
+- `application`: use-case services coordinating domain and adapters.
+- `ui`: local NiceGUI interface and Plotly presentation.
 
 Numeric parameters require an explicit unit, including `dimensionless` for ratios.
 Groups are extensible and distinguish unit and scenario scopes. A run definition
@@ -71,8 +69,42 @@ agreement before implementation. Pool data must not be borrowed from the house
 case without assessing applicability and obtaining approval.
 
 M4 provides a narrow real-process demonstration using the M3 single-rack
-heat/deadline admission rule. M5 adds a calculation-only finance model. The
-complete case demonstrator and optimizer remain unfinished.
+heat/deadline admission rule. M5 adds a calculation-only finance model; M6
+provides bounded deterministic parameter exploration. The complete sprintd
+case still has unresolved inputs and workload requirements.
+
+## M7 local interface
+
+Start with `python -m uv run digitalheat-simulator`, then open
+`http://127.0.0.1:8080`. The app binds to loopback and has no authentication:
+use it only on a trusted local machine, do not expose it to a network, and do
+not treat it as a multi-user or security-hardened service.
+
+Dashboard settings are shared with Optimization. Editing marks the state
+modified; Run Simulation and Find Sweet Spot are explicit actions. The default
+is the reconstructed 2025 reference house with configured always-on racks per
+house, not a scheduled compute workload. Missing prices, costs, sold hours and
+compute work remain unavailable. A pool requires one user-supplied kWh value
+per reference interval and a provenance source; pool prices are separate.
+House and pool groups have distinct per-site rack counts and local storage.
+Reference energy prices are not automatically applied to pools. Configured
+compute capacity is shown as installed capacity, not work or income.
+
+Select the clearly labeled synthetic demo to explore M6 using non-market
+assumptions. Set the objective, enabled variables and ranges in Optimization;
+the candidate budget is capped at 625 (default 25). Sampled results are only
+the best evaluated candidate. Hourly annual scenarios may consume substantial
+time and memory: start with small budgets. Switching starting scenario does not
+automatically run anything.
+
+The Real Workload view can start only the existing registered M4 weather
+demonstration on Windows. Its synthetic heat signal drives the existing
+coordinator's start/pause/checkpoint/resume sequence; measured progress and
+active time are shown as of the latest acknowledgement. Configured reference
+power is not a host measurement. Energy is estimated and recovered heat is
+derived; no TFLOP calibration or arbitrary executable is exposed. Journals
+and output are placed under ignored `artifacts\m4-ui`. An interrupted server
+does not reattach to a persisted PID; existing job-object cleanup applies.
 
 ## M5 economic calculations
 
@@ -201,7 +233,7 @@ non-interruptible jobs continue to completion, including through thermal
 boundaries. Interruptible jobs with `None` or zero pause step can pause at any
 progress point; positive steps restrict pauses to multiples of the step, except
 that completion is always permitted. Real checkpoint persistence and process
-control are not implemented.
+control are separate M4 features, not part of this ideal scheduler.
 
 For each site and interval, the scheduler uses `demand + storage capacity -
 opening storage` as the useful-heat budget, less heat reserved by physical rack
@@ -219,7 +251,7 @@ Demand and rack heat are treated as uniformly available within that interval;
 this is not a sub-hour tank model. Rack usage reports work, ON time and
 available-capacity utilization over the period and while ON; utilization is
 undefined (`None`) when the corresponding capacity-time denominator is zero.
-The scheduler does not resume saved progress across separate runs.
+The M3 scheduler does not resume saved progress across separate runs.
 
 Repeatable synthetic annual benchmarks are available via
 `uv run python scripts\benchmark_m3.py --jobs 100 --racks 10 --timeout 60`;

@@ -26,8 +26,39 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
   and committed as `1886f51` (worker foundation `cf593f2`). It does not
   complete the entire sprintd case.
 - M5 economic and compute-income model was accepted and committed as `64a6009`.
-- M6 parameter exploration is implemented and awaiting review; not committed.
-  M7 has not started.
+- M6 parameter exploration was accepted and committed as `4e7038b`.
+- M7 NiceGUI and Plotly demonstrator is implemented and awaiting review;
+  not committed.
+
+## M7 local interface
+
+- The Dashboard is the shared settings workspace; simulation and bounded
+  optimization run only on request, off the UI event loop. The reference
+  baseline uses the reconstructed 2025 house and accepted tariff/heat value.
+  Missing values stay unavailable; a pool requires its own supplied hourly
+  profile, provenance and prices. Rack counts are explicitly per site.
+- The Optimization view uses M6's result/coverage semantics and the same
+  configuration. A separate labeled synthetic scenario demonstrates economic
+  optimization. Default candidate budget is 25, maximum 625; annual hourly
+  physical searches can still be slow and memory intensive.
+- The Real Workload view starts only the registered Windows M4 demonstration
+  with synthetic local heat signals; progress and runtime are as of the latest
+  acknowledgment, and reference-rack energy is estimated. It does not expose
+  arbitrary commands or reconnect via a stored PID. The server binds to
+  localhost and has no authentication; use only on a trusted local machine.
+- The UI does not create job arrivals or model effective throughput, pool
+  physics, other years or market values. M3 scheduling is not configured by
+  the initial Dashboard; without a workload, compute utilization/work is
+  unavailable. Do not equate configured capacity with delivered work.
+- Browser smoke on local Edge: reference simulation produced 6,105 kWh useful
+  heat, 25,126.015625 kWh backup, 903 kWh dumped and 8,760 kWh electricity;
+  annualized cost and income remained unavailable. Annual, storage, January
+  and July plots rendered. Synthetic 625-candidate economic search reported
+  the exhaustive CHF 1,948.16 optimum; a 10-candidate search reported the best
+  evaluated candidate. Objective controls stayed synchronized across views.
+  The registered worker completed 200,000 replicates, with 36.937 s measured
+  active runtime, validated output and containment established before work;
+  its journal is `artifacts\m4-ui\5e5ced6e44db433ab27020aa4a1796d6\journal.json`.
 
 ## M4 demonstrator and limitations
 
@@ -236,8 +267,8 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
   other OPEX, lifetime and discount rate, and pool tariffs/heat values remain
   unresolved. The official ready-made house profile remains unavailable;
   equivalence is unverified.
-- Last verification on 2026-11-21: **130 tests passed**, Ruff lint and format
-  checks passed, the M1 annual baseline was reproduced, and M2 regressions passed.
+- Last verification on 2026-11-21: **187 tests passed**, including M1–M6
+  regressions; Ruff lint and format checks passed.
 - Synthetic annual benchmarks, traced Python allocations / Windows process peak
   working set: 100 jobs/10 racks 2.117 s, 12.77 / 81.57 MiB; 10,000/100 and
   100,000/1,000 each timed out after 60 s, at sampled peaks 9.80 / 64.13 MiB
