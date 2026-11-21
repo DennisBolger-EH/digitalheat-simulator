@@ -235,6 +235,70 @@ and 0.42 TFLOP; Local LLM profile entries represent average TFLOP/s for each
 local hour and its zero pause step allows pausing at any progress point.
 The sheet alone does not provide complete job arrivals or rack throughput.
 
+## M6 parameter exploration
+
+`digitalheat_simulator.optimization.search.search(groups, evaluator, objective,
+budget=625, group=None)` returns immutable structured candidate and best-result
+records, including groups and provenance, constraints, rejection reasons,
+physical metrics, M5 economics and search coverage. `objective` is `"economic"`
+or `"thermal"`; `group` limits variables to one group. Only enabled numeric
+parameters explicitly marked optimizable with minimum, maximum and step are
+searched. Others are fixed. The decimal grid starts at minimum and includes
+maximum only if step-aligned; integer metadata must be integral. A full grid
+within budget is exhaustive; otherwise deterministic stratified sampling and
+local grid refinement returns the best evaluated candidate, not a global
+optimum. Ties use ascending canonical group/parameter grid indices.
+Explored values retain their source metadata with a transformation identifying
+them as grid candidates, not sourced observations.
+
+The economic objective minimizes M5 annualized total cost; unavailable inputs
+reject a candidate. The thermal objective maximizes attributable useful server
+heat, then minimizes dumped heat, without weighting. Both require a complete
+Zurich calendar year. Heat coverage is a separate KPI and is unavailable for
+zero demand. If discharged opening storage has unknown origin, useful server
+heat is unavailable. Constraints report failures under the evaluated schedule,
+not proof that no better schedule exists.
+
+`application.optimization.ScenarioEvaluator` binds the following parameter
+names to an explicitly supplied base scenario. Identifiers in bindings must
+not contain colons:
+
+| Group | Parameter identifier | Unit / meaning |
+|---|---|---|
+| `quantities` | `site_count:<site>` | integer count; zero removes the group |
+| `quantities` | `rack_count:<site>:<rack-group>` | integer count per site |
+| `storage` | `capacity_kwh:<site>` | kWh per site |
+| `rack_technical` | `electrical_power_kw:<site>:<rack-group>`, `thermal_power_kw:<site>:<rack-group>` | kW per rack |
+| `rack_technical` | `recovery_efficiency:<site>:<rack-group>` | dimensionless |
+
+Economic group names and parameters use `finance.model.economics_from_groups`.
+Provided economic groups replace the corresponding base cost category; flat
+site-specific rates override the corresponding base rate. Omitted or disabled
+parameters retain the explicit base configuration; missing inputs remain
+missing. Unsupported optimizable bindings are rejected, not ignored.
+Provenance is required for physical bindings and economic inputs.
+
+With `jobs=None`, the evaluator uses each rack group's explicitly supplied
+on/off sequence (M2). For M3 scheduling, pass explicit jobs and a `Capacity`
+per site/rack-group; rack operation must be off. Site groups expand to
+individually identified sites, and job eligibility is expanded from group IDs.
+Work/deadline constraints default to required, but can be disabled explicitly.
+Physical simulations are cached per evaluator by scenario, jobs and capacities;
+economic-only changes reuse them. Results include source and evaluated
+scenarios, and scheduled job/rack details. Cache lifetime and memory are
+bounded by the evaluator instance, not automatically evicted. M5 may rerun
+the M2 physical calculation when validating rack activity.
+
+Run the explicitly synthetic two-interval annual demonstration and benchmarks:
+
+```powershell
+uv run python -m digitalheat_simulator.application.optimization_demo
+```
+
+Its prices and costs are not market data. The benchmark is not representative
+of hourly annual M3 workloads; use a small candidate budget for interactive
+use until the actual scenario is measured.
+
 ## M2 site-local scenarios
 
 Heat, thermal storage, dumping and backup belong to the site where production

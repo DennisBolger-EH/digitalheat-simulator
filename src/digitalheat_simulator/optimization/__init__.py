@@ -1,1 +1,1 @@
-"""Independent objective and optimizer boundary; implementation is deferred."""
+"""Deterministic parameter exploration independent of the user interface."""

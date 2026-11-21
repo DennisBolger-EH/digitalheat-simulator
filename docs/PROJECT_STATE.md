@@ -25,8 +25,9 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
 - M4 real computational workload and process-control integration was accepted
   and committed as `1886f51` (worker foundation `cf593f2`). It does not
   complete the entire sprintd case.
-- M5 economic and compute-income model is implemented and **awaiting review;
-  not accepted or committed**. M6 optimization has not started.
+- M5 economic and compute-income model was accepted and committed as `64a6009`.
+- M6 parameter exploration is implemented and awaiting review; not committed.
+  M7 has not started.
 
 ## M4 demonstrator and limitations
 
@@ -107,6 +108,38 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
 - M5 verification: 165 tests passed, including M1–M4 regressions; Ruff lint
   and format passed. The reference economic calculation was run with known
   inputs and separately with explicitly illustrative sold hours.
+
+## M6 parameter exploration
+
+- Deterministic global cross-group or group-only finite-grid search uses the
+  existing M2/M3 physical models and M5 finance. A budget chooses exhaustive
+  enumeration or bounded coarse-to-fine sampling; only the former establishes
+  an optimum within the declared grid. Results retain all candidates, grouped
+  parameters/provenance, constraints, scenario inputs, KPIs and financial
+  amounts for a future UI. Unsupported optimization bindings are rejected.
+- Economic objective minimizes annualized total cost, rejecting missing inputs.
+  The independent thermal objective maximizes useful attributable server heat
+  then minimizes dumped heat. Heat coverage is contextual. No attribution is
+  invented for unknown discharged opening storage. M3 heuristic failures are
+  schedule-specific, not proof of global infeasibility.
+- The explicitly synthetic full-2025 two-interval benchmark uses one house,
+  1–5 always-on racks and no M3 jobs. On Windows 11 / Python 3.12.16 / Intel
+  Xeon 6737P, 125 candidates took 0.0277 s (4,507/s; 125 feasible, 0 rejected,
+  100 physical-cache hits); 625 took 0.1433 s (4,363/s; 625 feasible, 0 rejected,
+  600 hits). Economic optimum on the four-group grid: one rack, 4 kWh storage,
+  CHF 100/rack CAPEX and CHF 4/server-hour, yielding CHF 1,948.16 annualized
+  cost. Thermal optimum: two racks, 4 kWh storage, 5,000 kWh useful and
+  9,012 kWh dumped; economic-only parameters tie at their lowest grid values.
+  These synthetic results are not market recommendations. Benchmarks do not
+  measure hourly annual M3 workloads; those may be unsuitable for interactive
+  search, so M7 should initially use bounded spaces. Per-evaluator caching can
+  consume substantial memory for many distinct annual physical scenarios.
+- Unresolved actual rack and installation costs, service, other OPEX, lifetime,
+  discount rate, sold hours, sale price, pool tariff/heat value, actual job
+  arrivals and effective throughput still prevent a defensible real economic
+  optimum. No additional optimization dependencies were added.
+- M6 verification: 178 tests passed, including all M1–M5 regressions; Ruff
+  lint and format checks passed.
 
 ## Permanent decisions and approved assumptions
 
