@@ -1,0 +1,4 @@
+Group Name,time till deadline (hours),daily fluctuation (average TFLOPS/hour),TFlop needed,minimal interruptable step size (TFlop)
+Bodycam analysis,168,[],2200,0.42
+Memobase Image tagging,43680,[],,
+Local LLMs,0.1,"[0, 0, 0, 0, 0, 0, 0, 0, 0, 1.69, 0.98, 1.07, 0, 0, 1.49, 0.74, 0, 0, 0, 0, 0, 0, 0, 0]",,0

@@ -4,6 +4,12 @@ M2 extends the deterministic thermal kernel to independent local sites with
 configurable rack groups, house demand, and supplied pool demand. The UI remains
 minimal; it does not calculate results, edit parameters, or run jobs.
 
+## Project context
+
+The repository is the authoritative persistent project memory. Before starting
+a new AI session or after a context reset, follow the mandatory recovery and
+update procedure in [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md).
+
 ## Development
 
 Install [uv](https://docs.astral.sh/uv/) and make it available on `PATH`.
@@ -66,6 +72,23 @@ case without assessing applicability and obtaining approval.
 The eventual scheduler must use the same scheduling logic for annual simulation
 and a real job it can pause and resume. No scheduler, optimizer, financial model,
 or result persistence is implemented in M2.
+
+## M3 work in progress
+
+The compute domain and execution-segment validation are preliminary. They do
+not schedule workloads, validate checkpoint positions, or integrate rack
+execution with thermal simulation. TFLOP is work; TFLOP/s is a rate. Rack
+compute capacity is independent of its electrical and thermal powers.
+Execution-segment validation checks rate capacity and work accounting;
+the rack ON-time helper unions concurrent execution segments to avoid
+double-counting, but is not yet wired into the thermal engine.
+`case_materials\compute-users-snapshot.csv` records the supplied
+[ComputeUsers sheet](https://docs.google.com/spreadsheets/d/1kABU3xqjJ45U9bOY2UiuPWKNoFXd40pA8I6Qoe57P6w/edit?gid=977748296)
+as accessed on 2026-11-21; blank cells remain unresolved, not zero. The user
+confirmed that Bodycam's work and minimum interruptible step are 2,200 TFLOP
+and 0.42 TFLOP; Local LLM profile entries represent average TFLOP/s for each
+local hour and its zero pause step allows pausing at any progress point.
+The sheet alone does not provide complete job arrivals or rack throughput.
 
 ## M2 site-local scenarios
 
