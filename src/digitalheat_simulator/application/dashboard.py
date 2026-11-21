@@ -153,6 +153,7 @@ class Configuration:
     mode: str = "reference"
     values: dict[str, float | int | None] = field(default_factory=dict)
     edited: set[str] = field(default_factory=set)
+    metadata: dict[str, Parameter] = field(default_factory=dict)
     pool_values: tuple[float, ...] | None = None
     pool_text: str = ""
     pool_source: str = ""
@@ -171,11 +172,31 @@ class Configuration:
     def set(self, name: str, value: float | None) -> None:
         self.values[name] = value
         self.edited.add(name)
+        if name in self.metadata:
+            if value is None:
+                self.metadata.pop(name)
+            else:
+                existing = self.metadata[name]
+                self.metadata[name] = replace(
+                    existing,
+                    enabled=True,
+                    provenance=Provenance(
+                        "user input", unit=existing.unit, applicability="configured scenario"
+                    ),
+                )
         self.mark_dirty()
 
     def mark_dirty(self) -> None:
         self.dirty = True
         self.revision += 1
+
+
+def replace_configuration(current: Configuration, new: Configuration) -> None:
+    """Replace shared configuration in place without running a simulation."""
+    revision = current.revision
+    current.__dict__.update(new.__dict__)
+    current.revision = revision
+    current.mark_dirty()
 
 
 def _parameter(identifier: str, value: float, unit: str, provenance: Provenance, integer=False):
@@ -190,6 +211,8 @@ def _parameter(identifier: str, value: float, unit: str, provenance: Provenance,
 
 
 def _source(config: Configuration, item: Field) -> Provenance:
+    if item.identifier in config.metadata and config.metadata[item.identifier].provenance:
+        return config.metadata[item.identifier].provenance
     if item.identifier in config.edited or item.provenance is None:
         return Provenance("user input", unit=item.unit, applicability="configured scenario")
     return item.provenance
@@ -271,7 +294,12 @@ def prepare(config: Configuration):
                 if key in config.edited
                 else parameter.provenance
             )
-            return replace(parameter, value=value, provenance=provenance)
+            if key in config.metadata:
+                provenance = config.metadata[key].provenance
+            template = config.metadata.get(key, parameter)
+            return replace(
+                template, identifier=parameter.identifier, value=value, provenance=provenance
+            )
 
         groups = tuple(
             replace(
@@ -335,7 +363,13 @@ def prepare(config: Configuration):
         if value is not None:
             item = fields[source_id]
             groups.setdefault(group, []).append(
-                _parameter(identifier, value, item.unit, _source(config, item), item.integer)
+                replace(
+                    config.metadata[source_id],
+                    identifier=identifier,
+                    value=int(value) if item.integer else value,
+                )
+                if source_id in config.metadata
+                else _parameter(identifier, value, item.unit, _source(config, item), item.integer)
             )
 
     for site in sites:
@@ -397,7 +431,12 @@ def run_simulation(config: Configuration) -> DashboardResult:
         if reference
         else None,
         thermal.rack_count * config.values["capacity"]
-        if config.mode == "reference" and config.values["capacity"] is not None
+        if config.mode == "reference"
+        and config.values["capacity"] is not None
+        and (
+            config.metadata.get("capacity") is None
+            or config.metadata["capacity"].enabled is not False
+        )
         else None,
     )
 

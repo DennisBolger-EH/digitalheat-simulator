@@ -2,6 +2,7 @@
 
 import copy
 import logging
+from dataclasses import replace
 from pathlib import Path
 
 from nicegui import run, ui
@@ -9,15 +10,35 @@ from nicegui import run, ui
 from digitalheat_simulator.application.dashboard import (
     Configuration,
     reference_fields,
+    replace_configuration,
     run_optimization,
     run_simulation,
 )
 from digitalheat_simulator.application.optimization_demo import example
 from digitalheat_simulator.application.workload_view import Demonstration
+from digitalheat_simulator.config.scenario_csv import (
+    DEFAULTS,
+    export_scenario,
+    import_scenario,
+    load_default,
+)
 from digitalheat_simulator.ui.plots import candidates_figure, storage_figure, thermal_figure
 
 LOG = logging.getLogger(__name__)
 WORKLOAD = Demonstration(Path(__file__).resolve().parents[3] / "artifacts" / "m4-ui")
+
+STYLE = """
+<style>
+body { zoom: 1.3; }
+.dashboard-layout { flex-wrap: wrap !important; }
+.dashboard-sidebar { width: 20rem; max-width: 100%; }
+.dashboard-content { flex: 1 1 25rem; min-width: 0; max-width: 100%; }
+.kpi-card { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+.scenario-files { gap: .35rem; }
+.scenario-files .q-btn { max-width: 100%; }
+.q-tab__label, .q-btn__content { white-space: normal; }
+</style>
+"""
 
 
 def _show(value, unit="", reason=None):
@@ -34,6 +55,7 @@ def _amount(amount, unit):
 
 def page() -> None:
     state = Configuration()
+    selection = {"value": "reference"}
     status = {"simulation": "Ready", "optimization": "Ready", "workload": "Ready"}
     results = {"simulation": None, "optimization": None}
     source_labels = {}
@@ -52,13 +74,88 @@ def page() -> None:
         modified()
         opt_controls.refresh()
 
-    def set_mode(value):
-        state.mode = value
-        state.ranges.clear()
-        state.mark_dirty()
+    def apply_configuration(new, choice):
+        replace_configuration(state, new)
+        selection["value"] = choice
+        if choice != "imported":
+            names = {
+                "reference": "Reference House",
+                "complete": "Synthetic Complete Demo",
+                "synthetic": "Synthetic optimization demo",
+            }
+            scenario_identity.set_text(f"Current scenario: {names[choice]}")
+            file_feedback.set_text("")
+        results["simulation"] = None
+        results["optimization"] = None
+        status["simulation"] = "Ready"
+        status["optimization"] = "Ready"
+        source_labels.clear()
         modified()
         sidebar.refresh()
         opt_controls.refresh()
+        dashboard_results.refresh()
+        optimization_results.refresh()
+
+    def set_mode(value):
+        if value == selection["value"]:
+            return
+        try:
+            if value in ("reference", "complete"):
+                new = load_default(value)
+            elif value == "synthetic":
+                new = Configuration(mode="synthetic")
+            else:
+                return
+            apply_configuration(new, value)
+        except (ValueError, OSError):
+            LOG.exception("Could not load default scenario")
+            ui_status.set_text("Failed — could not load the default scenario")
+
+    def export_configuration():
+        try:
+            text = export_scenario(state)
+            import_scenario(text)
+            ui.download(
+                text.encode("utf-8"), filename="digitalheat-scenario.csv", media_type="text/csv"
+            )
+            file_feedback.set_text("Scenario exported: digitalheat-scenario.csv")
+        except ValueError as exc:
+            ui_status.set_text(f"Validation error — {exc}")
+            file_feedback.set_text(f"Export failed: {exc}")
+
+    def download_template():
+        try:
+            contents = (DEFAULTS / "scenario-template.csv").read_bytes()
+            ui.download(contents, filename="scenario-template.csv", media_type="text/csv")
+            file_feedback.set_text("Template downloaded: scenario-template.csv")
+        except OSError:
+            LOG.exception("Could not read scenario template")
+            file_feedback.set_text("Template download failed; see server log.")
+
+    async def upload_configuration(event):
+        if any(value == "Running" for value in status.values()):
+            ui_status.set_text("Validation error — wait for the current run to finish")
+            return
+        try:
+            raw = await event.file.read()
+            text = raw.decode("utf-8-sig")
+            new = await run.io_bound(import_scenario, text)
+            apply_configuration(new, "imported")
+            dialog.close()
+            filename = event.file.name.replace("\\", "/").rsplit("/", 1)[-1]
+            scenario_identity.set_text(f"Current scenario: {filename}")
+            file_feedback.set_text(f"Scenario imported successfully: {filename}")
+            ui_status.set_text("Modified — scenario imported; run simulation explicitly")
+        except UnicodeDecodeError:
+            ui_status.set_text("Validation error — scenario CSV must use UTF-8 encoding")
+            import_message.set_text("Import failed: scenario CSV must use UTF-8 encoding.")
+        except ValueError as exc:
+            ui_status.set_text(f"Validation error — {exc}")
+            import_message.set_text(f"Import failed: {exc}")
+        except Exception:
+            LOG.exception("Scenario import failed")
+            ui_status.set_text("Failed — scenario import; see server log")
+            import_message.set_text("Import failed. See the server log for details.")
 
     async def execute(which):
         if any(value == "Running" for value in status.values()):
@@ -99,7 +196,17 @@ def page() -> None:
     def options():
         if state.mode == "synthetic":
             _, _, groups = example()
-            return [(g.identifier, p) for g in groups for p in g.parameters]
+            return [
+                (
+                    g.identifier,
+                    replace(
+                        state.metadata.get(f"synthetic:{g.identifier}:{p.identifier}", p),
+                        identifier=p.identifier,
+                    ),
+                )
+                for g in groups
+                for p in g.parameters
+            ]
         # Descriptors correspond to the existing M6 binding names.
         fields = {f.identifier: f for f in reference_fields()}
         descriptors = []
@@ -142,7 +249,12 @@ def page() -> None:
         return [
             (
                 group,
-                Parameter(
+                replace(
+                    state.metadata[source],
+                    identifier=name,
+                )
+                if source in state.metadata
+                else Parameter(
                     name,
                     int(state.values[source]) if fields[source].integer else state.values[source],
                     "integer" if fields[source].integer else "number",
@@ -154,6 +266,7 @@ def page() -> None:
             for group, name, source in descriptors
             if state.values[source] is not None
             and (not fields[source].integer or float(state.values[source]).is_integer())
+            and (source not in state.metadata or state.metadata[source].enabled is not False)
         ]
 
     @ui.refreshable
@@ -168,12 +281,23 @@ def page() -> None:
 
     @ui.refreshable
     def sidebar():
+        choices = {
+            "reference": "Reference House",
+            "complete": "Synthetic Complete Demo",
+            "synthetic": "Synthetic optimization demo",
+        }
+        if selection["value"] == "imported":
+            choices["imported"] = "Imported Scenario"
         ui.select(
-            {"reference": "Reference house (sourced)", "synthetic": "Synthetic optimization demo"},
+            choices,
             label="Starting scenario",
-            value=state.mode,
+            value=selection["value"],
             on_change=lambda e: set_mode(e.value),
         ).classes("w-full")
+        if selection["value"] == "complete":
+            ui.label("Synthetic financial and compute inputs — not market data").classes(
+                "text-orange-8"
+            )
         if state.mode == "synthetic":
             ui.label("Synthetic demonstration — not market data").classes("text-orange-8")
             _, _, groups = example()
@@ -188,7 +312,19 @@ def page() -> None:
                             value=state.values.get(key, parameter.value),
                             on_change=lambda e, k=key: change_value(k, e.value),
                         ).props("dense").classes("w-full")
-                        ui.label(f"{parameter.unit} · Synthetic").classes("text-caption")
+                        provenance = state.metadata.get(key, parameter).provenance
+                        category = (
+                            "User input"
+                            if key in state.edited
+                            or (provenance and "user input" in provenance.source.lower())
+                            else "Synthetic"
+                            if provenance and "synthetic" in provenance.source.lower()
+                            else "Configured"
+                        )
+                        label = ui.label(f"{parameter.unit} · {category}").classes("text-caption")
+                        source_labels[key] = (label, parameter.unit)
+                        if provenance:
+                            label.tooltip(f"Source: {provenance.source}")
             with ui.expansion("Optimization").classes("w-full"):
                 objective_control()
                 ui.button("Edit optimization ranges", on_click=lambda: tabs.set_value(opt)).props(
@@ -222,16 +358,29 @@ def page() -> None:
                     )
                     if item.integer:
                         inp.props("step=1")
+                    provenance = state.metadata.get(item.identifier)
+                    provenance = provenance.provenance if provenance else item.provenance
                     source = (
-                        "User input"
+                        "Unavailable until supplied"
+                        if state.values[item.identifier] is None
+                        else "Disabled (edit to enable)"
+                        if item.identifier in state.metadata
+                        and state.metadata[item.identifier].enabled is False
+                        else "User input"
                         if item.identifier in state.edited
+                        or (provenance and "user input" in provenance.source.lower())
                         else (
-                            "Sourced"
-                            if item.provenance and "ElCom" in item.provenance.source
+                            "Synthetic"
+                            if provenance and "synthetic" in provenance.source.lower()
+                            else "Sourced"
+                            if provenance
+                            and provenance == item.provenance
+                            and state.values[item.identifier] == item.value
+                            and "ElCom" in provenance.source
                             else "Calculated"
-                            if item.provenance and item.provenance.transformation
+                            if provenance and provenance.transformation
                             else "Configured"
-                            if item.provenance
+                            if provenance
                             else "User input (default)"
                             if state.values.get(item.identifier) is not None
                             else "Unavailable until supplied"
@@ -239,9 +388,9 @@ def page() -> None:
                     )
                     label = ui.label(f"{item.unit} · {source}").classes("text-caption text-grey-7")
                     source_labels[item.identifier] = (label, item.unit)
-                    if item.provenance:
+                    if provenance:
                         label.tooltip(
-                            f"Default source: {item.provenance.source}; {item.provenance.transformation or 'no transformation'}; access date: {item.provenance.access_date or 'unknown'}. Edits are user inputs."
+                            f"Source: {provenance.source}; {provenance.transformation or 'no transformation'}; access date: {provenance.access_date or 'unknown'}. Edits are user inputs."
                         )
                 if group == "Thermal consumers":
                     ui.label(
@@ -361,7 +510,7 @@ def page() -> None:
                     "Annualized cost",
                     "Compute income",
                 ):
-                    with ui.card().classes("min-w-40 grow p-3"):
+                    with ui.card().classes("kpi-card p-3"):
                         ui.label(name).classes("text-caption text-grey-7")
                         ui.label("Unavailable — run a simulation").classes("text-subtitle2")
             return
@@ -391,7 +540,7 @@ def page() -> None:
         )
         with ui.row().classes("w-full gap-2"):
             for name, value in cards:
-                with ui.card().classes("min-w-40 grow p-3"):
+                with ui.card().classes("kpi-card p-3"):
                     ui.label(name).classes("text-caption text-grey-7")
                     ui.label(value).classes("text-subtitle2")
                     ui.label(
@@ -567,6 +716,19 @@ def page() -> None:
             controls.refresh()
             workload_results.refresh()
 
+    ui.add_head_html(STYLE)
+    with ui.dialog() as dialog, ui.card():
+        ui.label("Import Scenario CSV").classes("text-h6")
+        ui.label("Import validates the complete file before replacing the current configuration.")
+        import_message = ui.label("")
+        ui.upload(
+            label="Choose scenario CSV",
+            auto_upload=True,
+            max_file_size=2_000_000,
+            on_upload=upload_configuration,
+            on_rejected=lambda: import_message.set_text("Import failed: file exceeds 2 MB."),
+        ).props("accept=.csv")
+        ui.button("Cancel", on_click=dialog.close).props("flat")
     with ui.header().classes("items-center justify-between"):
         ui.label("DigitalHeat Simulator").classes("text-h6")
         with ui.row().classes("items-center"):
@@ -577,11 +739,25 @@ def page() -> None:
         opt = ui.tab("Optimization")
         real = ui.tab("Real Workload")
     with ui.tab_panels(tabs, value=dash).classes("w-full"):
-        with ui.tab_panel(dash), ui.row().classes("w-full no-wrap items-start"):
-            with ui.column().classes("w-80 max-w-full shrink-0"):
+        with ui.tab_panel(dash), ui.row().classes("dashboard-layout w-full items-start"):
+            with ui.column().classes("dashboard-sidebar shrink-0"):
+                with ui.card().classes("scenario-files w-full p-3"):
+                    ui.label("Scenario Files").classes("text-h6")
+                    with ui.row().classes("w-full gap-1"):
+                        ui.button("Import Scenario", on_click=dialog.open)
+                        ui.button("Export Scenario", on_click=export_configuration)
+                    ui.button("Download Template", on_click=download_template)
+                    scenario_identity = ui.label("Current scenario: Reference House").classes(
+                        "text-caption"
+                    )
+                    file_feedback = ui.label("").classes("text-caption")
+                    ui.label(
+                        "Reference House: approved baseline. Synthetic Complete Demo: "
+                        "illustrative values. Template: start your own scenario."
+                    ).classes("text-caption")
                 ui.label("Settings").classes("text-h6")
                 sidebar()
-            with ui.column().classes("grow min-w-0"):
+            with ui.column().classes("dashboard-content"):
                 dashboard_results()
         with ui.tab_panel(opt):
             ui.label("Optimization").classes("text-h5")

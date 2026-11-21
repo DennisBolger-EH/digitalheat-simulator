@@ -27,8 +27,51 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
   complete the entire sprintd case.
 - M5 economic and compute-income model was accepted and committed as `64a6009`.
 - M6 parameter exploration was accepted and committed as `4e7038b`.
-- M7 NiceGUI and Plotly demonstrator is implemented and awaiting review;
-  not committed.
+- M7 NiceGUI and Plotly demonstrator was accepted and committed as `75083c7`.
+- M7.1 is not yet accepted. Its scenario-file discoverability and
+  data-preparation follow-up is implemented and awaiting review; not committed.
+
+## M7.1 scenario configuration and usability
+
+- The interface centrally applies 1.3x browser CSS zoom and wraps the Dashboard
+  and KPI cards for desktop/laptop widths. Scenario CSV version 1 stores the
+  complete M7 shared input state, M6 search ranges/settings, optional
+  parameter metadata and provenance; it never stores results as inputs.
+  Import validates before replacing the shared state, clears stale results and
+  marks it modified without launching work. See README for the exact schema,
+  flag restrictions and examples. Imported source claims are not independently
+  verified; a changed reference value cannot retain its original provenance.
+- Reusable reference and synthetic complete CSVs live in
+  `src\digitalheat_simulator\config\defaults`. The complete demo's explicitly
+  synthetic financial and capacity assumptions are documented in README; it
+  uses the reference house and does not invent scheduled compute work. The
+  original two-interval M6 synthetic demonstration remains available.
+- Edge browser smoke at 1920x1080 and 1366x768 checked sidebar expansion,
+  1.3x scaling, wrapping, CSV download/re-import, restored Dashboard values
+  and optimization ranges, dirty state without auto-run, editability and
+  invalid-import rejection without changing the prior configuration. Reference
+  plots contained 8,760 annual/storage points and 744 each for January/July.
+  The complete demo produced CHF 8,486.926/year annualized cost and CHF
+  1,200/year compute income; utilization/work remained unavailable. Its
+  eight-candidate grid was exhaustive, 8 feasible and 0 rejected, with best
+  CHF 8,037.672/year. The Real Workload view loaded; its worker was not
+  re-executed during this UI-only smoke check.
+- CSV files do not authenticate their provenance; use trusted files. The app
+  remains loopback-only by default and has no authentication. Results export,
+  scheduled jobs and market assumptions were not added.
+- Dashboard now has an immediately visible Scenario Files card for import,
+  export and template download. The version-1 editable template contains
+  42 reference inputs, 4 separate synthetic-demo inputs, settings and an
+  inactive optimization range. `docs\SCENARIO_PARAMETERS.md` lists data
+  meanings, requirements, provenance and missing real inputs. No CSV schema
+  change was made; spreadsheet applications were unavailable for testing.
+- Edge at 1920x1080 and 1366x768: downloaded the template, edited rack count
+  and storage, imported with filename/Modified feedback, simulated, edited
+  storage in the UI, exported and re-imported the edited values; invalid
+  import preserved the current state. CSV editing was scripted; Excel and
+  LibreOffice were not installed.
+- Verification: 213 tests passed, including M1-M7 regressions; Ruff lint and
+  formatting checks passed.
 
 ## M7 local interface
 

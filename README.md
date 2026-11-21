@@ -9,6 +9,54 @@ The repository is the authoritative persistent project memory. Before starting
 a new AI session or after a context reset, follow the mandatory recovery and
 update procedure in [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md).
 
+## Quick start
+
+### Prerequisites
+
+- [Git](https://git-scm.com/downloads) to clone the repository.
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) installed and
+  available on `PATH`. The simulator requires Python 3.12; uv can download
+  it automatically if it is not already installed.
+- A modern web browser and an internet connection for the initial Python and
+  dependency downloads. NiceGUI, Plotly and the other Python packages are
+  installed by uv; they do not need to be installed separately.
+
+The local interface can be used without the Real Workload demonstration. That
+demonstration uses the existing Windows-specific worker.
+
+### Start the simulator
+
+After cloning the repository, open PowerShell in its root directory and run:
+
+```powershell
+uv sync --no-dev
+uv run --no-dev digitalheat-simulator
+```
+
+Keep the terminal open and go to **http://127.0.0.1:8080** in your browser.
+On the Dashboard, select a starting scenario and press **Run Simulation**.
+Stop the server with Ctrl+C in the terminal. If you change application code,
+stop and start it again, then refresh the browser.
+
+If uv was installed as a Python module rather than an executable on `PATH`,
+use `python -m uv sync --no-dev` and
+`python -m uv run --no-dev digitalheat-simulator` instead.
+
+The server listens only on the local machine and has no authentication. Use
+it on a trusted machine and do not expose it to a network.
+
+### Prepare and share scenarios
+
+In the Dashboard's **Scenario Files** area, use **Download Template** to
+prepare your inputs, **Import Scenario** to load a CSV, and **Export Scenario**
+to save the current configuration. Importing marks the configuration modified;
+press **Run Simulation** explicitly to calculate results.
+
+See [Scenario parameters and data preparation](docs/SCENARIO_PARAMETERS.md)
+for the input checklist, required sources, CSV editing guidance and data still
+needed for a real scenario. The template is distinct from the Reference House
+and Synthetic Complete Demo starting scenarios.
+
 ## Development
 
 Install [uv](https://docs.astral.sh/uv/) and make it available on `PATH`.
@@ -96,6 +144,72 @@ the candidate budget is capped at 625 (default 25). Sampled results are only
 the best evaluated candidate. Hourly annual scenarios may consume substantial
 time and memory: start with small budgets. Switching starting scenario does not
 automatically run anything.
+
+### Scenario CSV and examples
+
+The Dashboard's **Scenario Files** card contains **Import Scenario**,
+**Export Scenario**, and **Download Template**. The template is a reference-
+based starting point for your own data, not the Synthetic Complete Demo. See
+[Scenario parameters](docs/SCENARIO_PARAMETERS.md) for a data-collection
+checklist and spreadsheet guidance.
+
+**Export Scenario** downloads the complete editable configuration, including
+the other demo's stored parameter values, optimization ranges, objective,
+candidate budget, and any supplied pool profile. It does not export calculated
+KPIs or optimization results. **Import Scenario** validates the entire file
+before replacing the shared Dashboard and Optimization settings. Import and
+scenario selection mark the configuration modified, clear previous results,
+and never start a run. Invalid files leave the current configuration unchanged.
+Files are UTF-8 CSV, with standard quoting for commas and multiline pool
+profiles; the upload limit is 2 MB. Start from an export or one of the files in
+`src\digitalheat_simulator\config\defaults`.
+
+The version 1 header is exactly:
+
+```csv
+version,kind,group,identifier,label,value,data_type,unit,enabled,optimizable,minimum,maximum,step,uncertainty_min,uncertainty_max,source,source_unit,publication_date,access_date,applicability,transformation,description,default
+```
+
+Every row has version `1`. `parameter` rows contain every supported input ID,
+including empty values for unavailable optional inputs; types, groups, and
+units must match the exported template. Integer values and bounds must be
+whole numbers within JavaScript's safe integer range; other numeric values
+must be finite. Nonempty values require a provenance `source`. ISO dates,
+description, default, source unit, applicability, transformation, uncertainty
+bounds, flags, and parameter bounds are optional where applicable. When
+present, Boolean flags are exactly `true` or `false`. Required physical inputs
+cannot be disabled; optional economic inputs and installed compute capacity
+can be disabled, and editing one in the UI enables it again. Parameters without
+a value cannot carry metadata, other than their standard label and unit.
+An edited reference value must use its actual provenance rather than retain the
+unchanged reference source.
+
+`range` rows use the existing M6 group and parameter identifiers, the
+corresponding type and unit, `enabled=true`, and `optimizable=true|false`.
+The latter is the search checkbox. Active ranges require minimum, maximum
+and positive step; range rows override parameter optimization metadata.
+`setting` rows contain `mode`, `objective`, `budget`, `pool_source` and
+`pool_profile`. A supplied profile must have exactly 8,760 nonnegative hourly
+kWh values. All parameter and setting rows are required; range rows are
+optional. Unknown, duplicated, malformed or unsupported rows are rejected,
+including result rows. An active range must correspond to an input applicable
+to the selected scenario. The exact header is versioned; future schemas
+require an explicit version change. For example, the complete demo includes:
+
+```csv
+1,parameter,Hardware costs,hardware_costs:per_rack,Hardware per rack,12000.0,number,CHF/rack,,,,,,,,synthetic complete demonstration; not a market value,CHF/rack,,,illustrative only,,,
+```
+
+**Reference House** retains the accepted physical baseline and sourced
+reference energy values, with unknown costs, sold hours and compute prices
+unavailable. **Synthetic Complete Demo** uses the same house and explicitly
+synthetic, non-market assumptions: 2 TFLOP/s per rack, CHF 12,000/rack
+hardware, CHF 1,500 installation, CHF 300/year service, CHF 100/year other
+OPEX, five-year lifetime, 4% discount rate, 4,000 sold server-hours and
+CHF 0.30/server-hour. It enables an eight-candidate economic grid. Its
+financial results are illustrative, not recommendations or sourced prices.
+Utilization and compute work remain unavailable because no jobs are invented.
+The separate original synthetic optimization demo is still available.
 
 The Real Workload view can start only the existing registered M4 weather
 demonstration on Windows. Its synthetic heat signal drives the existing
