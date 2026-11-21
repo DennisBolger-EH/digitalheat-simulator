@@ -16,14 +16,16 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
 
 ## Milestones and current status
 
-- M0 foundation, M1 deterministic thermal kernel, and M2 multi-unit site-local
-  scaling were accepted and committed. M1 and M2 remain mandatory regressions.
-- M3 foundation was committed as `b9fb0c0`. M3 completion is implemented in
-  uncommitted changes and awaiting user review; the largest benchmark timed out.
-  The scheduler, execution validation and compute-to-thermal integration are
-  ideal models, not the case's real-process demonstrator.
-- **Next approved action:** stop after the M3 report and wait for review. Do not
-  start M4 or commit without user authorization.
+- M0 foundation, M1 deterministic thermal kernel, M2 multi-unit site-local
+  scaling, and M3 are accepted and committed. M1 and M2 remain mandatory
+  regressions.
+- M3 is the accepted deterministic ideal compute/scheduling and
+  compute-to-thermal integration baseline. Its foundation was committed as
+  `b9fb0c0` and its completion as `b673f29`.
+- The sprintd-required real-process workload demonstrator remains unimplemented
+  and belongs to a later milestone.
+- **Next milestone:** M4 real computational workload and process-control
+  integration. M4 must be planned and explicitly approved before implementation.
 
 ## Permanent decisions and approved assumptions
 
@@ -125,3 +127,6 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
   and 59.08 / 225.40 MiB respectively. Larger cases are not demonstrated
   practical; see `scripts/benchmark_m3.py` for the measurement method.
   Repeated rack/eligibility and deadline-projection scans are bottlenecks.
+- Functional M3 correctness is accepted despite the current large-workload
+  performance limitation. Performance optimization is deferred until real
+  workload and optimizer requirements establish meaningful performance targets.
