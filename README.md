@@ -71,8 +71,10 @@ agreement before implementation. Pool data must not be borrowed from the house
 case without assessing applicability and obtaining approval.
 
 The eventual demonstrator must use the same scheduling logic for annual simulation
-and a real job it can pause and resume. No real-job adapter, optimizer, financial
-model, or result persistence is implemented.
+and a real job it can pause and resume. An internal weather-analysis worker and
+observed-rack thermal integration are work in progress, but there is no
+production-ready real-job adapter, live scheduler integration, execution journal,
+optimizer, or financial model. The worker alone is not the case demonstrator.
 
 ## M3 ideal compute and scheduling
 

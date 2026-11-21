@@ -14,7 +14,11 @@ from digitalheat_simulator.domain.scenario import (
     ThermalDemandSeries,
 )
 from digitalheat_simulator.domain.thermal import Rack
-from digitalheat_simulator.simulation.compute_thermal import simulate_execution
+from digitalheat_simulator.simulation.compute_thermal import (
+    RackOnInterval,
+    simulate_execution,
+    simulate_rack_intervals,
+)
 from digitalheat_simulator.workload.execution import ExecutionSegment
 
 START = datetime(2025, 1, 1, tzinfo=UTC)
@@ -99,3 +103,44 @@ def test_execution_spanning_intervals_is_split_before_local_balance():
         [0.4, 0.4]
     )
     assert result.racks[0].on_seconds == 3600
+
+
+def test_observed_rack_intervals_union_and_site_isolation():
+    scenario = Scenario((site("house", 0), site("pool", 2, rack_count=0)))
+    intervals = (
+        RackOnInterval(RACK, START, START + timedelta(seconds=900)),
+        RackOnInterval(RACK, START + timedelta(seconds=450), START + timedelta(seconds=1350)),
+    )
+    result = simulate_rack_intervals(scenario, (RACK,), intervals)
+    house, pool = (row.per_site_flows[0] for row in result.sites)
+    assert house.electrical_energy_kwh == pytest.approx(1350 / 3600)
+    assert house.dumped_heat_kwh == pytest.approx(0.8 * 1350 / 3600)
+    assert pool.backup_heat_kwh == 2
+    assert pool.direct_supply_kwh == 0
+
+
+def test_observed_rack_intervals_reject_unregistered_rack_and_outside_horizon():
+    scenario = Scenario((site("house", 1),))
+    other = ComputeRack("other", "house", THERMAL, 2, 2)
+    with pytest.raises(ValueError, match="unknown"):
+        simulate_rack_intervals(scenario, (RACK,), (RackOnInterval(other, START, END),))
+    with pytest.raises(ValueError, match="outside"):
+        simulate_rack_intervals(
+            scenario, (RACK,), (RackOnInterval(RACK, START, END + timedelta(seconds=1)),)
+        )
+
+
+def test_observed_rack_interval_crossing_thermal_boundaries():
+    intervals = (Interval(START, END), Interval(END, END + timedelta(hours=1)))
+    demand = ThermalDemandSeries(
+        "house", tuple(DemandPoint(item, 1) for item in intervals), Provenance("test", unit="kWh")
+    )
+    group = RackGroup("racks", THERMAL, 1, tuple(OperationPoint(item, False) for item in intervals))
+    scenario = Scenario((SiteGroup("house", "house", 1, demand, (group,), 0, 0),))
+    result = simulate_rack_intervals(
+        scenario,
+        (RACK,),
+        (RackOnInterval(RACK, START + timedelta(minutes=30), END + timedelta(minutes=30)),),
+    )
+    assert [row.flows.electrical_energy_kwh for row in result.intervals] == [0.5, 0.5]
+    assert [row.flows.recoverable_heat_kwh for row in result.intervals] == pytest.approx([0.4, 0.4])

@@ -22,10 +22,34 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
 - M3 is the accepted deterministic ideal compute/scheduling and
   compute-to-thermal integration baseline. Its foundation was committed as
   `b9fb0c0` and its completion as `b673f29`.
-- The sprintd-required real-process workload demonstrator remains unimplemented
-  and belongs to a later milestone.
-- **Next milestone:** M4 real computational workload and process-control
-  integration. M4 must be planned and explicitly approved before implementation.
+- M4 real computational workload and process-control integration was approved
+  and is **in progress, not complete or accepted**. The sprintd-required
+  scheduler-controlled real-process demonstrator remains unimplemented.
+
+## M4 work in progress
+
+- The selected workload is local CPU analysis of the supplied weather data:
+  temperature summary and seeded block-bootstrap regression of temperature
+  against irradiance. The internal worker can acknowledge cooperative
+  pause/resume, write a checksum-checked checkpoint, and restore it; its test
+  verifies unchanged progress during an acknowledged pause and identical output
+  after restart. Regression does not imply causation.
+- `simulate_rack_intervals` integrates physical rack ON interval unions into
+  the existing site-local thermal balance without fabricating ideal TFLOP work.
+  Its power inputs are configured, not measured.
+- This is not an end-to-end demonstrator: a real execution adapter with safe
+  Windows process-tree containment, live M3 scheduler decisions and
+  acknowledgement feedback, monotonic occupancy-to-thermal accounting,
+  calibration/provenance, execution journal, and a complete demonstration are
+  still needed. The worker's file replacement and checksum do not establish
+  checkpoint durability across machine or power failure. It is not yet a safe
+  public process-execution interface.
+- The planned physical energy report must keep measured progress and runtime,
+  configured power and efficiency, estimated electrical energy, and derived
+  thermal values separate. Missing power must yield unavailable energy, not zero.
+- Last M4 work-in-progress verification: 137 tests passed, Ruff lint and format
+  passed, and the M1 annual reference values remained unchanged. This does not
+  establish M4 acceptance.
 
 ## Permanent decisions and approved assumptions
 

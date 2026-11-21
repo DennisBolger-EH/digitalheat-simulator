@@ -49,6 +49,63 @@ class IntegratedResult:
     racks: tuple[RackUsage, ...]
 
 
+@dataclass(frozen=True)
+class RackOnInterval:
+    """Observed physical-rack occupancy, independent of ideal compute progress."""
+
+    rack: ComputeRack
+    start: datetime
+    end: datetime
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.rack, ComputeRack):
+            raise TypeError("rack must be a ComputeRack")
+        if self.start.utcoffset() is None or self.end.utcoffset() is None:
+            raise ValueError("rack interval bounds must be timezone-aware")
+        if self.end.astimezone(UTC) <= self.start.astimezone(UTC):
+            raise ValueError("rack interval end must follow start")
+
+
+def simulate_rack_intervals(
+    scenario: Scenario, racks: tuple[ComputeRack, ...], intervals: tuple[RackOnInterval, ...]
+) -> ScenarioResult:
+    """Integrate observed occupancy without inventing ideal compute work."""
+    validate_compute_sites(scenario, racks)
+    points = scenario.sites[0].demand.points
+    starts = [point.interval.start.astimezone(UTC) for point in points]
+    final = points[-1].interval.end.astimezone(UTC)
+    rack_map = {(rack.site_identifier, rack.identifier): rack for rack in racks}
+    chunks: dict[tuple[int, RackKey], list[tuple[datetime, datetime]]] = defaultdict(list)
+    for interval in intervals:
+        key = (interval.rack.site_identifier, interval.rack.identifier)
+        if rack_map.get(key) != interval.rack:
+            raise ValueError("rack interval references an unknown or mismatched rack")
+        start, end = interval.start.astimezone(UTC), interval.end.astimezone(UTC)
+        if start < starts[0] or end > final:
+            raise ValueError("rack interval extends outside the simulation horizon")
+        index = bisect_right(starts, start) - 1
+        while start < end:
+            stop = min(end, points[index].interval.end.astimezone(UTC))
+            chunks[index, key].append((start, stop))
+            start = stop
+            index += 1
+    by_site: dict[tuple[str, int], list[tuple[ComputeRack, float]]] = defaultdict(list)
+    for (index, key), spans in chunks.items():
+        by_site[key[0], index].append((rack_map[key], union_seconds(spans)))
+    results = []
+    for site in scenario.sites:
+        opening = site.initial_storage_kwh
+        flows = []
+        for index in range(len(points)):
+            flow = execution_interval_flows(
+                site, index, opening, tuple(by_site[site.identifier, index])
+            )
+            flows.append(flow)
+            opening = flow.storage_closing_kwh
+        results.append(SiteResult(site, tuple(flows)))
+    return aggregate_scenario(scenario, tuple(results))
+
+
 def validate_compute_sites(scenario: Scenario, racks: tuple[ComputeRack, ...]) -> None:
     """Require one explicit site per group and an exact physical-rack inventory."""
     sites = {site.identifier: site for site in scenario.sites}
