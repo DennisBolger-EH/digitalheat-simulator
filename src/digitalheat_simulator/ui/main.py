@@ -10,18 +10,14 @@ from nicegui import run, ui
 from digitalheat_simulator.application.dashboard import (
     Configuration,
     reference_fields,
-    replace_configuration,
     run_optimization,
     run_simulation,
 )
 from digitalheat_simulator.application.optimization_demo import example
+from digitalheat_simulator.application.scenario_bundle import BundleScenario, ScenarioBundle
 from digitalheat_simulator.application.workload_view import Demonstration
-from digitalheat_simulator.config.scenario_csv import (
-    DEFAULTS,
-    export_scenario,
-    import_scenario,
-    load_default,
-)
+from digitalheat_simulator.config.bundle_csv import export_bundle, import_bundle
+from digitalheat_simulator.config.scenario_csv import DEFAULTS, load_default
 from digitalheat_simulator.ui.plots import candidates_figure, storage_figure, thermal_figure
 
 LOG = logging.getLogger(__name__)
@@ -54,15 +50,40 @@ def _amount(amount, unit):
 
 
 def page() -> None:
-    state = Configuration()
-    selection = {"value": "reference"}
+    scenarios = {
+        "reference-house": BundleScenario("reference-house", "Reference House", Configuration()),
+        "synthetic-complete-demo": BundleScenario(
+            "synthetic-complete-demo", "Synthetic Complete Demo", load_default("complete")
+        ),
+        "synthetic-optimization-demo": BundleScenario(
+            "synthetic-optimization-demo",
+            "Synthetic optimization demo",
+            Configuration(mode="synthetic"),
+        ),
+    }
+    bundle = ScenarioBundle(2, "Built-in scenarios", None, scenarios, "reference-house")
+    state = bundle.active.configuration
     status = {"simulation": "Ready", "optimization": "Ready", "workload": "Ready"}
     results = {"simulation": None, "optimization": None}
+    result_identity = {"simulation": None, "optimization": None}
     source_labels = {}
+    pending = {"bundle": None}
+
+    def update_bundle_labels():
+        active = bundle.active
+        scenario_identity.set_text(f"Scenario: {active.scenario_name} ({active.scenario_id})")
+        other = sum(s.dirty for s in bundle.scenarios.values() if s is not active)
+        bundle_info.set_text(
+            f"Loaded scenarios: {len(bundle.scenarios)} · Bundle: "
+            f"{'Modified' if bundle.dirty else 'Unmodified'} · "
+            f"Active: {'Modified' if active.dirty else 'Unmodified'} · Other modified: {other}"
+        )
+        bundle_source.set_text(f"File: {bundle.source_filename}")
 
     def modified():
         if state.dirty:
             ui_status.set_text("Modified — changes not yet simulated")
+        update_bundle_labels()
 
     def change_value(key, value):
         state.set(key, value)
@@ -74,63 +95,70 @@ def page() -> None:
         modified()
         opt_controls.refresh()
 
-    def apply_configuration(new, choice):
-        replace_configuration(state, new)
-        selection["value"] = choice
-        if choice != "imported":
-            names = {
-                "reference": "Reference House",
-                "complete": "Synthetic Complete Demo",
-                "synthetic": "Synthetic optimization demo",
-            }
-            scenario_identity.set_text(f"Current scenario: {names[choice]}")
-            file_feedback.set_text("")
+    def activate():
         results["simulation"] = None
         results["optimization"] = None
+        result_identity["simulation"] = None
+        result_identity["optimization"] = None
         status["simulation"] = "Ready"
         status["optimization"] = "Ready"
         source_labels.clear()
-        modified()
+        ui_status.set_text("Modified — changes not yet simulated" if state.dirty else "Ready")
+        update_bundle_labels()
         sidebar.refresh()
         opt_controls.refresh()
         dashboard_results.refresh()
         optimization_results.refresh()
 
     def set_mode(value):
-        if value == selection["value"]:
+        nonlocal state
+        if value == bundle.active_scenario_id:
             return
-        try:
-            if value in ("reference", "complete"):
-                new = load_default(value)
-            elif value == "synthetic":
-                new = Configuration(mode="synthetic")
-            else:
-                return
-            apply_configuration(new, value)
-        except (ValueError, OSError):
-            LOG.exception("Could not load default scenario")
-            ui_status.set_text("Failed — could not load the default scenario")
+        if any(value == "Running" for value in status.values()):
+            ui_status.set_text("Wait for the current run before switching scenarios")
+            sidebar.refresh()
+            return
+        state = bundle.select(value).configuration
+        activate()
 
     def export_configuration():
         try:
-            text = export_scenario(state)
-            import_scenario(text)
+            text = export_bundle(bundle)
             ui.download(
-                text.encode("utf-8"), filename="digitalheat-scenario.csv", media_type="text/csv"
+                text.encode("utf-8"), filename="digitalheat-scenarios.csv", media_type="text/csv"
             )
-            file_feedback.set_text("Scenario exported: digitalheat-scenario.csv")
+            bundle.mark_saved()
+            update_bundle_labels()
+            file_feedback.set_text("Bundle download started: digitalheat-scenarios.csv")
         except ValueError as exc:
             ui_status.set_text(f"Validation error — {exc}")
             file_feedback.set_text(f"Export failed: {exc}")
 
     def download_template():
         try:
-            contents = (DEFAULTS / "scenario-template.csv").read_bytes()
-            ui.download(contents, filename="scenario-template.csv", media_type="text/csv")
-            file_feedback.set_text("Template downloaded: scenario-template.csv")
+            contents = (DEFAULTS / "multi-scenario-template.csv").read_bytes()
+            ui.download(contents, filename="multi-scenario-template.csv", media_type="text/csv")
+            file_feedback.set_text("Template downloaded: multi-scenario-template.csv")
         except OSError:
             LOG.exception("Could not read scenario template")
             file_feedback.set_text("Template download failed; see server log.")
+
+    def accept_import():
+        nonlocal bundle, state
+        if any(value == "Running" for value in status.values()):
+            ui_status.set_text("Wait for the current run before importing")
+            return
+        bundle = pending["bundle"]
+        pending["bundle"] = None
+        state = bundle.active.configuration
+        state.dirty = True
+        activate()
+        confirm_dialog.close()
+        dialog.close()
+        file_feedback.set_text(
+            f"Imported {len(bundle.scenarios)} scenarios: {bundle.source_filename}"
+        )
+        ui_status.set_text("Modified — scenarios imported; run simulation explicitly")
 
     async def upload_configuration(event):
         if any(value == "Running" for value in status.values()):
@@ -139,29 +167,36 @@ def page() -> None:
         try:
             raw = await event.file.read()
             text = raw.decode("utf-8-sig")
-            new = await run.io_bound(import_scenario, text)
-            apply_configuration(new, "imported")
-            dialog.close()
             filename = event.file.name.replace("\\", "/").rsplit("/", 1)[-1]
-            scenario_identity.set_text(f"Current scenario: {filename}")
-            file_feedback.set_text(f"Scenario imported successfully: {filename}")
-            ui_status.set_text("Modified — scenario imported; run simulation explicitly")
+            new = await run.io_bound(import_bundle, text, filename)
+            if any(value == "Running" for value in status.values()):
+                raise ValueError("Wait for the current run before importing")
+            pending["bundle"] = new
+            if bundle.dirty:
+                confirm_dialog.open()
+            else:
+                accept_import()
         except UnicodeDecodeError:
             ui_status.set_text("Validation error — scenario CSV must use UTF-8 encoding")
             import_message.set_text("Import failed: scenario CSV must use UTF-8 encoding.")
         except ValueError as exc:
             ui_status.set_text(f"Validation error — {exc}")
-            import_message.set_text(f"Import failed: {exc}")
+            import_message.set_text(f"Import failed. No scenarios were changed. {exc}")
         except Exception:
             LOG.exception("Scenario import failed")
             ui_status.set_text("Failed — scenario import; see server log")
             import_message.set_text("Import failed. See the server log for details.")
+
+    def open_import():
+        import_message.set_text("")
+        dialog.open()
 
     async def execute(which):
         if any(value == "Running" for value in status.values()):
             return
         snapshot = copy.deepcopy(state)
         revision = state.revision
+        identity = (bundle.active.scenario_id, bundle.active.scenario_name)
         status[which] = "Running"
         ui_status.set_text(f"Running {which}…")
         controls.refresh()
@@ -169,12 +204,14 @@ def page() -> None:
             fn = run_simulation if which == "simulation" else run_optimization
             output = await run.io_bound(fn, snapshot)
             results[which] = output
+            result_identity[which] = identity
             status[which] = "Completed"
             if which == "simulation" and state.revision == revision:
                 state.dirty = False
             ui_status.set_text(
                 "Completed" if not state.dirty else "Completed — configuration modified"
             )
+            update_bundle_labels()
         except ValueError as exc:
             status[which] = "Validation error"
             ui_status.set_text(f"Validation error — {exc}")
@@ -186,8 +223,8 @@ def page() -> None:
         dashboard_results.refresh()
         optimization_results.refresh()
 
-    def update_range(key, position, value):
-        current = list(state.ranges.get(key, (False, None, None, None)))
+    def update_range(key, position, value, default):
+        current = list(state.ranges.get(key, default))
         current[position] = value
         state.ranges[key] = tuple(current)
         state.mark_dirty()
@@ -282,19 +319,20 @@ def page() -> None:
     @ui.refreshable
     def sidebar():
         choices = {
-            "reference": "Reference House",
-            "complete": "Synthetic Complete Demo",
-            "synthetic": "Synthetic optimization demo",
+            key: scenario.scenario_name + (" · Modified" if scenario.dirty else "")
+            for key, scenario in bundle.scenarios.items()
         }
-        if selection["value"] == "imported":
-            choices["imported"] = "Imported Scenario"
         ui.select(
             choices,
             label="Starting scenario",
-            value=selection["value"],
+            value=bundle.active_scenario_id,
             on_change=lambda e: set_mode(e.value),
-        ).classes("w-full")
-        if selection["value"] == "complete":
+        ).classes("w-full").tooltip(f"Scenario ID: {bundle.active_scenario_id}")
+        if bundle.active_scenario_id == "swimming-pool":
+            ui.label(
+                "Pool setup: set a pool count and supply its 8,760-hour demand profile and source."
+            ).classes("text-orange-8")
+        if bundle.active_scenario_id == "synthetic-complete-demo":
             ui.label("Synthetic financial and compute inputs — not market data").classes(
                 "text-orange-8"
             )
@@ -479,20 +517,20 @@ def page() -> None:
         for group, p in options():
             key = (group, p.identifier)
             default = (p.optimizable is True, p.minimum, p.maximum, p.step)
-            if key not in state.ranges:
-                state.ranges[key] = default
-            current = state.ranges[key]
+            current = state.ranges.get(key, default)
             with ui.row().classes("items-center w-full"):
                 ui.checkbox(
                     f"{group} / {p.label or p.identifier} [{p.unit}]",
                     value=current[0],
-                    on_change=lambda e, k=key: update_range(k, 0, e.value),
+                    on_change=lambda e, k=key, d=default: update_range(k, 0, e.value, d),
                 ).classes("w-72")
                 for index, name in ((1, "Min"), (2, "Max"), (3, "Step")):
                     ui.number(
                         name,
                         value=current[index],
-                        on_change=lambda e, k=key, i=index: update_range(k, i, e.value),
+                        on_change=lambda e, k=key, i=index, d=default: update_range(
+                            k, i, e.value, d
+                        ),
                     ).props("dense").classes("w-24")
 
     @ui.refreshable
@@ -514,6 +552,10 @@ def page() -> None:
                         ui.label(name).classes("text-caption text-grey-7")
                         ui.label("Unavailable — run a simulation").classes("text-subtitle2")
             return
+        ui.label(
+            f"Simulation results: {result_identity['simulation'][1]} "
+            f"({result_identity['simulation'][0]})"
+        ).classes("text-caption")
         metrics = result.evaluation.metrics
         economics = metrics.economics
         cards = (
@@ -617,6 +659,10 @@ def page() -> None:
         if result is None:
             ui.label("No optimization results yet.")
             return
+        ui.label(
+            f"Optimization results: {result_identity['optimization'][1]} "
+            f"({result_identity['optimization'][0]})"
+        ).classes("text-caption")
         ui.label(result.result_label.capitalize()).classes("text-h6")
         ui.label(
             f"{result.method} · evaluated {result.evaluated_count}/{result.grid_size} · feasible {result.feasible_count} · rejected {result.rejected_count}"
@@ -717,8 +763,14 @@ def page() -> None:
             workload_results.refresh()
 
     ui.add_head_html(STYLE)
+    with ui.dialog() as confirm_dialog, ui.card():
+        ui.label("The current bundle contains unsaved edits. Replace it?").classes("text-h6")
+        ui.label("Export the bundle first to keep its changes.")
+        with ui.row():
+            ui.button("Replace bundle", on_click=accept_import)
+            ui.button("Cancel", on_click=confirm_dialog.close).props("flat")
     with ui.dialog() as dialog, ui.card():
-        ui.label("Import Scenario CSV").classes("text-h6")
+        ui.label("Import Scenarios CSV").classes("text-h6")
         ui.label("Import validates the complete file before replacing the current configuration.")
         import_message = ui.label("")
         ui.upload(
@@ -744,16 +796,20 @@ def page() -> None:
                 with ui.card().classes("scenario-files w-full p-3"):
                     ui.label("Scenario Files").classes("text-h6")
                     with ui.row().classes("w-full gap-1"):
-                        ui.button("Import Scenario", on_click=dialog.open)
-                        ui.button("Export Scenario", on_click=export_configuration)
-                    ui.button("Download Template", on_click=download_template)
-                    scenario_identity = ui.label("Current scenario: Reference House").classes(
-                        "text-caption"
-                    )
+                        ui.button("Import Scenarios", on_click=open_import)
+                        ui.button("Export All Scenarios", on_click=export_configuration)
+                    ui.button("Download Multi-Scenario Template", on_click=download_template)
+                    scenario_identity = ui.label(
+                        "Scenario: Reference House (reference-house)"
+                    ).classes("text-caption")
+                    bundle_source = ui.label("File: Built-in scenarios").classes("text-caption")
+                    bundle_info = ui.label(
+                        "Loaded scenarios: 3 · Bundle: Unmodified · Active: Unmodified · Other modified: 0"
+                    ).classes("text-caption")
                     file_feedback = ui.label("").classes("text-caption")
                     ui.label(
-                        "Reference House: approved baseline. Synthetic Complete Demo: "
-                        "illustrative values. Template: start your own scenario."
+                        "Switching retains edits. The pool template needs a demand profile; "
+                        "synthetic demo values are illustrative."
                     ).classes("text-caption")
                 ui.label("Settings").classes("text-h6")
                 sidebar()

@@ -28,8 +28,37 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
 - M5 economic and compute-income model was accepted and committed as `64a6009`.
 - M6 parameter exploration was accepted and committed as `4e7038b`.
 - M7 NiceGUI and Plotly demonstrator was accepted and committed as `75083c7`.
-- M7.1 is not yet accepted. Its scenario-file discoverability and
-  data-preparation follow-up is implemented and awaiting review; not committed.
+- M7.1 scenario-file usability and documentation was reviewed and committed
+  (latest documentation ordering commit `9543361`).
+- M7.2 multi-scenario bundle workflow is implemented and awaiting review;
+  not committed.
+
+## M7.2 multi-scenario bundles
+
+- Version-2 CSV adds stable `scenario_id` and `scenario_name` to every
+  version-1 row. Each scenario is independently complete and validated by
+  the existing version-1 adapter; one invalid scenario rejects the whole
+  import. Version-1 files import as one scenario with filename-derived ID and
+  name. Export writes every scenario as version 2. Source filenames and
+  imported timestamps are in-memory metadata, not CSV fields.
+- The Dashboard selector switches by ID, retains each scenario's in-memory
+  edits and displays per-scenario/bundle unsaved state. Runs use an active
+  scenario snapshot and show its ID/name; switching clears old results.
+  Importing over unsaved changes requires confirmation. Export initiates a
+  browser download and marks the revisions saved; browser download completion
+  cannot be guaranteed by the server.
+- The downloadable template includes Reference House, Swimming Pool and the
+  synthetic Optimization Demo. The pool scenario starts at zero pools until
+  a real 8,760-hour demand profile and source are supplied. No demand data,
+  scenario inheritance or persistence was added.
+- Edge workflow at 1920x1080 and 1366x768 downloaded and imported the
+  three-scenario template, simulated the house, retained a pool storage edit
+  across a synthetic optimization, exported/re-imported all scenarios and
+  rejected an invalid bundle without changing the pool edit. Unsaved-bundle
+  replacement was confirmed to require approval. Details and version-2 format
+  are in README and `docs\SCENARIO_PARAMETERS.md`.
+- Verification: 226 tests passed, including M1-M7.1 regressions; Ruff lint
+  and formatting checks passed.
 
 ## M7.1 scenario configuration and usability
 

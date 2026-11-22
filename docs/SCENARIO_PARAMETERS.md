@@ -1,11 +1,39 @@
 # Scenario data preparation
 
-Use **Dashboard → Scenario Files → Download Template** to get an importable
-starting file. Reference House is an approved reference baseline; Synthetic
-Complete Demo contains explicitly synthetic demonstration values. The
-template starts from the reference baseline, leaves unknown real values empty,
-and includes four separately labeled synthetic-demo rows that are inactive in
-reference mode. It is not a complete real economic scenario.
+Use **Dashboard → Scenario Files → Download Multi-Scenario Template** to get
+an importable bundle. It contains independent Reference House, Swimming Pool
+and Optimization Demo (Synthetic) scenarios. The pool starts with zero pools:
+enter a pool count only after supplying its 8,760-hour profile and source.
+Reference House is an approved reference baseline; the synthetic demonstration
+is not market data. Unknown real values remain empty. Each scenario includes
+the complete inventory; there is no inheritance.
+
+The version-2 header is:
+
+```csv
+version,scenario_id,scenario_name,kind,group,identifier,label,value,data_type,unit,enabled,optimizable,minimum,maximum,step,uncertainty_min,uncertainty_max,source,source_unit,publication_date,access_date,applicability,transformation,description,default
+```
+
+Each row has `version=2`, the same `scenario_id` and `scenario_name` as all
+other rows of that scenario, and its own parameter, setting or range.
+IDs use lowercase ASCII letters, digits and hyphens; names may contain spaces
+but must be unique ignoring case and have no leading/trailing whitespace.
+For example:
+
+```csv
+2,reference-house,Reference House,parameter,Scenario,racks,Racks per house,1,integer,count,,,,,,,,accepted M1 reference rack assumption,,,,reference house,,,
+```
+
+Import validates **all** scenarios before replacing anything. Selecting a
+scenario uses its ID and updates the shared controls without running a job;
+edits stay with that scenario. The card shows active and bundle dirty status
+and the number of other modified scenarios. Simulation and optimization
+operate only on the active scenario; switching clears previous results.
+Export All Scenarios includes all current in-memory edits and metadata and
+starts a download, marking those revisions saved. Replacing a modified bundle
+requires confirmation; to keep changes, export first. State is in memory only.
+Existing version-1 single-scenario CSVs remain importable; their filename
+provides the generated ID and display name, and their next export is version 2.
 
 Open the UTF-8 CSV in a text editor, Excel, LibreOffice Calc or similar.
 When importing into a spreadsheet, choose comma delimiter, double-quote
@@ -171,13 +199,12 @@ jobs, utilization, delivered work or effective compute throughput.
 | `budget` | Candidate budget; whole number 1–625 | setting integer; none | R | 25; user input | Not applicable |
 | `mode` | `reference` for the house/pool workspace; `synthetic` for the separate old demonstration | setting string; none | R | `reference`; user input | Not applicable |
 
-Optimization **range** rows use M6 group/ID rather than Dashboard IDs. The
-template contains an inactive example for `quantities` /
-`rack_count:house:rack`: integer count, `enabled=true`, `optimizable=false`,
-with empty bounds. For example, enter minimum 1, maximum 2 and step 1 and
-set `optimizable=true` to search it; these would be illustrative search
-bounds, not measured data. The referenced site and parameter must be
-applicable. Other ranges are easiest to configure in
+Optimization **range** rows use M6 group/ID rather than Dashboard IDs. For
+example, `quantities` / `rack_count:house:rack` can be added as a `kind=range`
+row: integer count,
+`enabled=true`, `optimizable=true`, minimum 1, maximum 2 and step 1 are an
+illustrative example, not measured data. The referenced site and parameter
+must be applicable. Ranges are easiest to configure in
 the Optimization view and export. The search checkbox, minimum, maximum and
 step are stored in the shared scenario. Range rows override parameter-row
 optimization metadata. Active ranges require all three bounds; the current
@@ -185,7 +212,7 @@ value must remain within declared bounds.
 
 ## Separate synthetic optimization demo
 
-These four `parameter` rows are required in all version-1 files to preserve
+These four `parameter` rows are required in each version-1 or version-2 scenario to preserve
 the separate synthetic demo's state, but do not alter the reference-house
 scenario. Their source is **synthetic demonstration; not a market value**;
 all are optional to adjust and optimizable in synthetic mode.

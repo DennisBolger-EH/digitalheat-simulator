@@ -47,15 +47,85 @@ it on a trusted machine and do not expose it to a network.
 
 ### Prepare and share scenarios
 
-In the Dashboard's **Scenario Files** area, use **Download Template** to
-prepare your inputs, **Import Scenario** to load a CSV, and **Export Scenario**
-to save the current configuration. Importing marks the configuration modified;
-press **Run Simulation** explicitly to calculate results.
+In the Dashboard's **Scenario Files** area, use **Download Multi-Scenario
+Template** to prepare inputs, **Import Scenarios** to load a CSV, and **Export
+All Scenarios** to save the complete bundle. Choose a loaded scenario using
+the selector; switching retains its in-memory edits and clears old results.
+Press **Run Simulation** explicitly to calculate results.
 
 See [Scenario parameters and data preparation](docs/SCENARIO_PARAMETERS.md)
 for the input checklist, required sources, CSV editing guidance and data still
 needed for a real scenario. The template is distinct from the Reference House
 and Synthetic Complete Demo starting scenarios.
+
+## Scenario CSV and examples
+
+The Dashboard's **Scenario Files** card contains **Import Scenarios**,
+**Export All Scenarios**, and **Download Multi-Scenario Template**. See
+[Scenario parameters](docs/SCENARIO_PARAMETERS.md) for a data-collection
+checklist and spreadsheet guidance.
+
+**Export All Scenarios** downloads every scenario's current editable inputs,
+optimization settings and provenance, not results. **Import Scenarios**
+validates every scenario before replacing the bundle; invalid files leave the
+current bundle unchanged. If the bundle has unsaved edits, replacement requires
+confirmation. Switching retains edits independently and clears previous results;
+neither importing nor switching runs a simulation. The UI shows the active ID,
+imported filename, loaded count and modified state. Export starts a download
+and marks the current in-memory revisions saved.
+
+The template contains Reference House, Swimming Pool and the synthetic
+Optimization Demo. Swimming Pool starts with zero pools until a real hourly
+profile and its source are supplied; it does not invent pool demand. The
+separately built-in Synthetic Complete Demo remains available before importing.
+Files are UTF-8 CSV with standard quoting, including multiline pool profiles;
+the upload limit is 2 MB.
+
+New bundles use this version 2 header:
+
+```csv
+version,scenario_id,scenario_name,kind,group,identifier,label,value,data_type,unit,enabled,optimizable,minimum,maximum,step,uncertainty_min,uncertainty_max,source,source_unit,publication_date,access_date,applicability,transformation,description,default
+```
+
+Every row has version `2` and repeats its stable lowercase, hyphenated
+`scenario_id` and consistent, unique `scenario_name`. Each scenario is complete
+and independent; there is no inheritance. Existing version-1 files still
+import as one scenario, with ID and name derived from the filename, and export
+as version 2. `parameter` rows contain every supported input ID,
+including empty values for unavailable optional inputs; types, groups, and
+units must match the exported template. Integer values and bounds must be
+whole numbers within JavaScript's safe integer range; other numeric values
+must be finite. Nonempty values require a provenance `source`. ISO dates,
+description, default, source unit, applicability, transformation, uncertainty
+bounds, flags, and parameter bounds are optional where applicable. When
+present, Boolean flags are exactly `true` or `false`. Required physical inputs
+cannot be disabled; optional economic inputs and installed compute capacity
+can be disabled, and editing one in the UI enables it again. Parameters without
+a value cannot carry metadata, other than their standard label and unit.
+An edited reference value must use its actual provenance rather than retain the
+unchanged reference source.
+
+`range` rows use the existing M6 group and parameter identifiers, the
+corresponding type and unit, `enabled=true`, and `optimizable=true|false`.
+The latter is the search checkbox. Active ranges require minimum, maximum
+and positive step; range rows override parameter optimization metadata.
+`setting` rows contain `mode`, `objective`, `budget`, `pool_source` and
+`pool_profile`. A supplied profile must have exactly 8,760 nonnegative hourly
+kWh values. All parameter and setting rows are required; range rows are
+optional. Unknown, duplicated, malformed or unsupported rows are rejected,
+including result rows. An active range must correspond to an input applicable
+to that scenario.
+
+**Reference House** retains the accepted physical baseline and sourced
+reference energy values, with unknown costs, sold hours and compute prices
+unavailable. **Synthetic Complete Demo** uses the same house and explicitly
+synthetic, non-market assumptions: 2 TFLOP/s per rack, CHF 12,000/rack
+hardware, CHF 1,500 installation, CHF 300/year service, CHF 100/year other
+OPEX, five-year lifetime, 4% discount rate, 4,000 sold server-hours and
+CHF 0.30/server-hour. It enables an eight-candidate economic grid. Its
+financial results are illustrative, not recommendations or sourced prices.
+Utilization and compute work remain unavailable because no jobs are invented.
+The separate original synthetic optimization demo is still available.
 
 ## Development
 
@@ -440,72 +510,6 @@ the candidate budget is capped at 625 (default 25). Sampled results are only
 the best evaluated candidate. Hourly annual scenarios may consume substantial
 time and memory: start with small budgets. Switching starting scenario does not
 automatically run anything.
-
-### Scenario CSV and examples
-
-The Dashboard's **Scenario Files** card contains **Import Scenario**,
-**Export Scenario**, and **Download Template**. The template is a reference-
-based starting point for your own data, not the Synthetic Complete Demo. See
-[Scenario parameters](docs/SCENARIO_PARAMETERS.md) for a data-collection
-checklist and spreadsheet guidance.
-
-**Export Scenario** downloads the complete editable configuration, including
-the other demo's stored parameter values, optimization ranges, objective,
-candidate budget, and any supplied pool profile. It does not export calculated
-KPIs or optimization results. **Import Scenario** validates the entire file
-before replacing the shared Dashboard and Optimization settings. Import and
-scenario selection mark the configuration modified, clear previous results,
-and never start a run. Invalid files leave the current configuration unchanged.
-Files are UTF-8 CSV, with standard quoting for commas and multiline pool
-profiles; the upload limit is 2 MB. Start from an export or one of the files in
-`src\digitalheat_simulator\config\defaults`.
-
-The version 1 header is exactly:
-
-```csv
-version,kind,group,identifier,label,value,data_type,unit,enabled,optimizable,minimum,maximum,step,uncertainty_min,uncertainty_max,source,source_unit,publication_date,access_date,applicability,transformation,description,default
-```
-
-Every row has version `1`. `parameter` rows contain every supported input ID,
-including empty values for unavailable optional inputs; types, groups, and
-units must match the exported template. Integer values and bounds must be
-whole numbers within JavaScript's safe integer range; other numeric values
-must be finite. Nonempty values require a provenance `source`. ISO dates,
-description, default, source unit, applicability, transformation, uncertainty
-bounds, flags, and parameter bounds are optional where applicable. When
-present, Boolean flags are exactly `true` or `false`. Required physical inputs
-cannot be disabled; optional economic inputs and installed compute capacity
-can be disabled, and editing one in the UI enables it again. Parameters without
-a value cannot carry metadata, other than their standard label and unit.
-An edited reference value must use its actual provenance rather than retain the
-unchanged reference source.
-
-`range` rows use the existing M6 group and parameter identifiers, the
-corresponding type and unit, `enabled=true`, and `optimizable=true|false`.
-The latter is the search checkbox. Active ranges require minimum, maximum
-and positive step; range rows override parameter optimization metadata.
-`setting` rows contain `mode`, `objective`, `budget`, `pool_source` and
-`pool_profile`. A supplied profile must have exactly 8,760 nonnegative hourly
-kWh values. All parameter and setting rows are required; range rows are
-optional. Unknown, duplicated, malformed or unsupported rows are rejected,
-including result rows. An active range must correspond to an input applicable
-to the selected scenario. The exact header is versioned; future schemas
-require an explicit version change. For example, the complete demo includes:
-
-```csv
-1,parameter,Hardware costs,hardware_costs:per_rack,Hardware per rack,12000.0,number,CHF/rack,,,,,,,,synthetic complete demonstration; not a market value,CHF/rack,,,illustrative only,,,
-```
-
-**Reference House** retains the accepted physical baseline and sourced
-reference energy values, with unknown costs, sold hours and compute prices
-unavailable. **Synthetic Complete Demo** uses the same house and explicitly
-synthetic, non-market assumptions: 2 TFLOP/s per rack, CHF 12,000/rack
-hardware, CHF 1,500 installation, CHF 300/year service, CHF 100/year other
-OPEX, five-year lifetime, 4% discount rate, 4,000 sold server-hours and
-CHF 0.30/server-hour. It enables an eight-candidate economic grid. Its
-financial results are illustrative, not recommendations or sourced prices.
-Utilization and compute work remain unavailable because no jobs are invented.
-The separate original synthetic optimization demo is still available.
 
 The Real Workload view can start only the existing registered M4 weather
 demonstration on Windows. Its synthetic heat signal drives the existing
