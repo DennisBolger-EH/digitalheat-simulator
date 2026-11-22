@@ -6,6 +6,11 @@ import plotly.graph_objects as go
 
 from digitalheat_simulator.application.dashboard import DashboardResult
 from digitalheat_simulator.optimization.search import SearchResult
+from digitalheat_simulator.ui.kpi_inventory import (
+    OPTIMIZATION_CHART_SERIES,
+    STORAGE_CHART_SERIES,
+    THERMAL_CHART_SERIES,
+)
 
 ZONE = ZoneInfo("Europe/Zurich")
 
@@ -22,24 +27,34 @@ def thermal_figure(result: DashboardResult, month: int | None = None) -> go.Figu
     x = [row.interval.start.astimezone(ZONE) for row in rows]
     figure = go.Figure()
     traces = [
-        ("Demand", [row.flows.demand_kwh for row in rows]),
-        ("Recoverable server heat", [row.flows.recoverable_heat_kwh for row in rows]),
-        ("Backup heat", [row.flows.backup_heat_kwh for row in rows]),
-        ("Dumped server heat", [row.flows.dumped_heat_kwh for row in rows]),
+        (THERMAL_CHART_SERIES[0], "Demand", [row.flows.demand_kwh for row in rows]),
+        (
+            THERMAL_CHART_SERIES[1],
+            "Recoverable server heat",
+            [row.flows.recoverable_heat_kwh for row in rows],
+        ),
+        (THERMAL_CHART_SERIES[3], "Backup heat", [row.flows.backup_heat_kwh for row in rows]),
+        (
+            THERMAL_CHART_SERIES[4],
+            "Dumped server heat",
+            [row.flows.dumped_heat_kwh for row in rows],
+        ),
     ]
     if result.evaluation.metrics.useful_heat_kwh is not None:
         traces.insert(
             2,
             (
+                THERMAL_CHART_SERIES[2],
                 "Useful server heat",
                 [row.flows.direct_supply_kwh + row.flows.storage_discharge_kwh for row in rows],
             ),
         )
-    for name, values in traces:
+    for identifier, name, values in traces:
         figure.add_scatter(
             x=x,
             y=values,
             name=name,
+            meta=identifier,
             mode="lines",
             hovertemplate="%{x}<br>%{y:.3f} kWh<extra>%{fullData.name}</extra>",
         )
@@ -60,6 +75,7 @@ def storage_figure(result: DashboardResult) -> go.Figure:
         x=[row.interval.end.astimezone(ZONE) for row in rows],
         y=[row.flows.storage_closing_kwh for row in rows],
         name="Closing storage",
+        meta=STORAGE_CHART_SERIES[0],
         mode="lines",
         hovertemplate="%{x}<br>%{y:.3f} kWh<extra>%{fullData.name}</extra>",
     )
@@ -103,6 +119,7 @@ def candidates_figure(result: SearchResult, key: tuple[str, str] | None = None) 
         text=[p[2] for p in points],
         mode="markers",
         name="Feasible candidates",
+        meta=OPTIMIZATION_CHART_SERIES[0],
         hovertemplate="%{text}<br>Objective: %{y:.3f}<extra></extra>",
     )
     figure.update_layout(

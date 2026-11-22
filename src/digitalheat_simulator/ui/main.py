@@ -13,11 +13,28 @@ from digitalheat_simulator.application.dashboard import (
     run_optimization,
     run_simulation,
 )
+from digitalheat_simulator.application.kpi_explanations import (
+    chart_explanations,
+    not_calculated,
+    optimization_explanations,
+    simulation_explanations,
+    workload_explanations,
+)
 from digitalheat_simulator.application.optimization_demo import example
 from digitalheat_simulator.application.scenario_bundle import BundleScenario, ScenarioBundle
 from digitalheat_simulator.application.workload_view import Demonstration
 from digitalheat_simulator.config.bundle_csv import export_bundle, import_bundle
 from digitalheat_simulator.config.scenario_csv import DEFAULTS, load_default
+from digitalheat_simulator.ui.kpi_inventory import (
+    COMPUTE_DETAILS,
+    ECONOMIC_DETAILS,
+    OPTIMIZATION_RESULTS,
+    PRIMARY_CARDS,
+    STORAGE_CHART_SERIES,
+    THERMAL_CHART_SERIES,
+    THERMAL_DETAILS,
+    WORKLOAD_RESULTS,
+)
 from digitalheat_simulator.ui.plots import candidates_figure, storage_figure, thermal_figure
 
 LOG = logging.getLogger(__name__)
@@ -33,6 +50,8 @@ body { zoom: 1.3; }
 .scenario-files { gap: .35rem; }
 .scenario-files .q-btn { max-width: 100%; }
 .q-tab__label, .q-btn__content { white-space: normal; }
+.kpi-explanation { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 32rem; }
+.kpi-tooltip { white-space: pre-wrap; max-width: 26rem; max-height: 65vh; overflow-y: auto; }
 </style>
 """
 
@@ -47,6 +66,12 @@ def _show(value, unit="", reason=None):
 
 def _amount(amount, unit):
     return _show(amount.value, unit, amount.reason)
+
+
+def _clear_results(results, identities):
+    for key in ("simulation", "optimization"):
+        results[key] = None
+        identities[key] = None
 
 
 def page() -> None:
@@ -68,6 +93,35 @@ def page() -> None:
     result_identity = {"simulation": None, "optimization": None}
     source_labels = {}
     pending = {"bundle": None}
+    last_workload = {"snapshot": None}
+
+    def show_explanation(explanation):
+        explanation_text.set_text(explanation.format())
+        explanation_dialog.open()
+
+    def explanation_affordance(explanation):
+        ui.button(
+            icon="info",
+            on_click=lambda: show_explanation(explanation),
+        ).props(f'flat round dense aria-label="Details for {explanation.title}"')
+
+    def explained_label(text, explanation):
+        with ui.row().classes("items-center gap-1"):
+            ui.tooltip(explanation.format()).classes("kpi-tooltip")
+            ui.label(text)
+            explanation_affordance(explanation)
+
+    def search_summary(result):
+        explanations = optimization_explanations(result)
+        ui.label(f"{result.method} · {result.result_label}")
+        with ui.row().classes("items-center gap-1"):
+            for key in OPTIMIZATION_RESULTS[1:]:
+                explanation = explanations[key]
+                explained_label(f"{explanation.title}: {explanation.result}", explanation)
+        explained_label(
+            f"Objective: {_show(explanations['optimization_objective'].result, explanations['optimization_objective'].result_unit)}",
+            explanations["optimization_objective"],
+        )
 
     def update_bundle_labels():
         active = bundle.active
@@ -96,10 +150,8 @@ def page() -> None:
         opt_controls.refresh()
 
     def activate():
-        results["simulation"] = None
-        results["optimization"] = None
-        result_identity["simulation"] = None
-        result_identity["optimization"] = None
+        explanation_dialog.close()
+        _clear_results(results, result_identity)
         status["simulation"] = "Ready"
         status["optimization"] = "Ready"
         source_labels.clear()
@@ -205,6 +257,7 @@ def page() -> None:
             output = await run.io_bound(fn, snapshot)
             results[which] = output
             result_identity[which] = identity
+            explanation_dialog.close()
             status[which] = "Completed"
             if which == "simulation" and state.revision == revision:
                 state.dirty = False
@@ -538,51 +591,34 @@ def page() -> None:
         result = results["simulation"]
         if result is None:
             with ui.row().classes("w-full gap-2"):
-                for name in (
-                    "Heat coverage",
-                    "Useful server heat",
-                    "Backup heat",
-                    "Dumped heat",
-                    "Electricity consumption",
-                    "Compute utilization / work",
-                    "Annualized cost",
-                    "Compute income",
-                ):
+                for name, keys in PRIMARY_CARDS:
                     with ui.card().classes("kpi-card p-3"):
+                        explanation = not_calculated(keys[0], name)
+                        ui.tooltip(explanation.format()).classes("kpi-tooltip")
                         ui.label(name).classes("text-caption text-grey-7")
-                        ui.label("Unavailable — run a simulation").classes("text-subtitle2")
+                        ui.label("Not calculated — run a simulation").classes("text-subtitle2")
+                        explanation_affordance(explanation)
             return
         ui.label(
             f"Simulation results: {result_identity['simulation'][1]} "
             f"({result_identity['simulation'][0]})"
         ).classes("text-caption")
         metrics = result.evaluation.metrics
-        economics = metrics.economics
-        cards = (
-            (
-                "Heat coverage",
-                _show(
-                    None if metrics.heat_coverage is None else 100 * metrics.heat_coverage,
-                    "%",
-                    economics.useful_heat_kwh.reason,
-                ),
-            ),
-            ("Useful server heat", _amount(economics.useful_heat_kwh, "kWh")),
-            ("Backup heat", _show(metrics.backup_heat_kwh, "kWh")),
-            ("Dumped heat", _show(metrics.dumped_heat_kwh, "kWh")),
-            ("Electricity consumption", _show(metrics.electricity_kwh, "kWh")),
-            (
-                "Compute utilization / work",
-                _show(metrics.compute_utilization, "", "no scheduled compute workload")
-                + " / "
-                + _show(metrics.delivered_work_tflop, "TFLOP", "no scheduled compute workload"),
-            ),
-            ("Annualized cost", _amount(economics.annualized_total_cost_chf, "CHF/year")),
-            ("Compute income", _amount(economics.compute_income_chf, "CHF/year")),
-        )
+        explanations = simulation_explanations(result)
         with ui.row().classes("w-full gap-2"):
-            for name, value in cards:
+            for name, keys in PRIMARY_CARDS:
+                value = " / ".join(
+                    _show(
+                        explanations[key].result,
+                        explanations[key].result_unit,
+                        explanations[key].notes if explanations[key].result is None else None,
+                    )
+                    for key in keys
+                )
                 with ui.card().classes("kpi-card p-3"):
+                    ui.tooltip("\n\n".join(explanations[key].format() for key in keys)).classes(
+                        "kpi-tooltip"
+                    )
                     ui.label(name).classes("text-caption text-grey-7")
                     ui.label(value).classes("text-subtitle2")
                     ui.label(
@@ -590,87 +626,87 @@ def page() -> None:
                         if value.startswith("Unavailable")
                         else "Calculated · simulated"
                     ).classes("text-caption")
+                    with ui.row().classes("gap-1"):
+                        for key in keys:
+                            explanation_affordance(explanations[key])
+        series = chart_explanations(result, explanations)
+
+        def chart_details(keys):
+            with ui.row().classes("items-center gap-1"):
+                ui.label("Series explanations:").classes("text-caption")
+                for key in keys:
+                    if key == "chart_useful" and metrics.useful_heat_kwh is None:
+                        continue
+                    with ui.row().classes("items-center gap-1"):
+                        ui.tooltip(series[key].format()).classes("kpi-tooltip")
+                        ui.label(series[key].title.replace(" series", "")).classes("text-caption")
+                        explanation_affordance(series[key])
+
+        chart_details(THERMAL_CHART_SERIES)
         ui.plotly(thermal_figure(result)).classes("w-full")
+        chart_details(STORAGE_CHART_SERIES)
         ui.plotly(storage_figure(result)).classes("w-full")
         with ui.row().classes("w-full"):
             with ui.column().classes("grow"):
                 ui.label("January detail")
+                chart_details(THERMAL_CHART_SERIES)
                 ui.plotly(thermal_figure(result, 1)).classes("w-full")
             with ui.column().classes("grow"):
                 ui.label("July detail")
+                chart_details(THERMAL_CHART_SERIES)
                 ui.plotly(thermal_figure(result, 7)).classes("w-full")
         with ui.expansion("Thermal details").classes("w-full"):
-            flows = [row.flows for row in result.thermal.intervals]
-            for name in (
-                "demand_kwh",
-                "direct_supply_kwh",
-                "storage_charge_kwh",
-                "storage_discharge_kwh",
-                "dumped_heat_kwh",
-                "backup_heat_kwh",
-            ):
-                ui.label(
-                    f"{name.replace('_', ' ').title()}: {sum(getattr(f, name) for f in flows):,.3f} kWh"
+            for key in THERMAL_DETAILS:
+                explanation = explanations[key]
+                explained_label(
+                    f"{explanation.title}: {_show(explanation.result, explanation.result_unit)}",
+                    explanation,
                 )
-            ui.label(
-                f"Space heat: {_show(result.space_heat_kwh, 'kWh')}; hot water: {_show(result.hot_water_kwh, 'kWh')}"
-            )
         with ui.expansion("Compute details").classes("w-full"):
-            ui.label(f"Rack hours: {_amount(economics.rack_hours, 'h')}")
-            ui.label(
-                f"Installed capacity: {_show(result.installed_capacity_tflop_per_s, 'TFLOP/s', 'capacity not supplied')}"
-            )
-            ui.label(
-                "Compute work and utilization: unavailable without explicit scheduled jobs and capacity."
-            )
+            for key in COMPUTE_DETAILS:
+                explanation = explanations[key]
+                explained_label(
+                    f"{explanation.title}: {_show(explanation.result, explanation.result_unit)}",
+                    explanation,
+                )
         with ui.expansion("Economic details").classes("w-full"):
-            for name in (
-                "capex_chf",
-                "annualized_capex_chf",
-                "electricity_cost_chf",
-                "service_cost_chf",
-                "opex_chf",
-                "useful_heat_value_chf",
-                "compute_income_chf",
-                "case_break_even_chf_per_server_hour",
-                "full_cost_break_even_chf_per_server_hour",
-                "annualized_total_cost_chf",
-            ):
-                unit = "CHF/server-hour" if "per_server_hour" in name else "CHF"
-                ui.label(
-                    f"{name.replace('_', ' ').title()}: {_amount(getattr(economics, name), unit)}"
+            for key in ECONOMIC_DETAILS:
+                explanation = explanations[key]
+                explained_label(
+                    f"{explanation.title}: {_show(explanation.result, explanation.result_unit)}",
+                    explanation,
                 )
         with ui.expansion("Optimization details").classes("w-full"):
             optimization = results["optimization"]
             if optimization is None:
-                ui.label("Unavailable — no optimization has been run")
+                for key in OPTIMIZATION_RESULTS:
+                    explanation = not_calculated(
+                        key,
+                        key.replace("optimization_", "").replace("_", " ").title(),
+                        "Run optimization",
+                    )
+                    explained_label(f"{explanation.title}: Not calculated", explanation)
             else:
-                ui.label(
-                    f"{optimization.objective} · {optimization.method} · {optimization.result_label} · "
-                    f"{optimization.evaluated_count} evaluated · {optimization.feasible_count} feasible · "
-                    f"{optimization.rejected_count} rejected"
-                )
-                if optimization.best is not None:
-                    ui.label(f"Objective: {optimization.best.objective_value}")
+                search_summary(optimization)
 
     @ui.refreshable
     def optimization_results():
         result = results["optimization"]
         if result is None:
-            ui.label("No optimization results yet.")
+            for key in OPTIMIZATION_RESULTS:
+                explanation = not_calculated(
+                    key,
+                    key.replace("optimization_", "").replace("_", " ").title(),
+                    "Run optimization",
+                )
+                explained_label(f"{explanation.title}: Not calculated", explanation)
             return
         ui.label(
             f"Optimization results: {result_identity['optimization'][1]} "
             f"({result_identity['optimization'][0]})"
         ).classes("text-caption")
-        ui.label(result.result_label.capitalize()).classes("text-h6")
-        ui.label(
-            f"{result.method} · evaluated {result.evaluated_count}/{result.grid_size} · feasible {result.feasible_count} · rejected {result.rejected_count}"
-        )
+        search_summary(result)
         if result.best:
-            ui.label(
-                f"Objective: {result.best.objective_value} {'CHF/year' if result.objective == 'economic' else 'kWh (useful, dumped)'}"
-            )
             for group in result.best.groups:
                 with ui.expansion(group.label or group.identifier).classes("w-full"):
                     for p in group.parameters:
@@ -684,6 +720,10 @@ def page() -> None:
                 def draw():
                     holder.clear()
                     with holder:
+                        explained_label(
+                            "Candidate series",
+                            optimization_explanations(result)["optimization_candidates"],
+                        )
                         ui.plotly(candidates_figure(result, selected["value"])).classes("w-full")
 
                 ui.select(
@@ -708,33 +748,24 @@ def page() -> None:
     @ui.refreshable
     def workload_results():
         data = WORKLOAD.snapshot()
+        last_workload["snapshot"] = data
+        explanations = workload_explanations(data)
+
+        def display(key):
+            explanation = explanations[key]
+            value = (
+                "Not calculated"
+                if explanation.classification == "Not calculated"
+                else _show(explanation.result, explanation.result_unit)
+            )
+            explained_label(f"{explanation.title}: {value}", explanation)
+
         ui.label("Registered workload: weather-analysis").classes("text-h6")
         ui.label("Synthetic local heat signals; configured reference rack, not host measurements.")
         ui.label(f"Worker state: {data.get('status', 'Ready')}")
-        ui.label(
-            f"Progress measured (last acknowledgement): {_show(data.get('progress'), 'replicates')} / {_show(data.get('replicates'), 'replicates')}"
-        )
-        ui.label(
-            f"Active runtime measured (last acknowledgement): {_show(data.get('active_seconds'), 's')}"
-        )
-        decision = data.get("decision")
-        ui.label(
-            f"Scheduler decision: {('run' if decision['run'] else 'pause') if decision else 'Unavailable'}"
-        )
+        for key in WORKLOAD_RESULTS:
+            display(key)
         ui.label(f"Assigned site: {'weather-site' if data.get('journal') else 'Unavailable'}")
-        ui.label(
-            f"Useful heat opportunity: {_show(decision.get('opportunity_kwh') if decision else None, 'kWh')}"
-        )
-        ui.label(f"Checkpoint: {data.get('checkpoint') or 'Unavailable'}")
-        power = data.get("power", {})
-        ui.label(f"Electrical power configured: {_show(power.get('electrical_kw'), 'kW')}")
-        energy = data.get("energy", {})
-        ui.label(
-            f"Electrical energy estimated: {_show(energy.get('electrical_kwh_estimated'), 'kWh')}"
-        )
-        ui.label(
-            f"Recoverable heat derived: {_show(energy.get('recoverable_heat_kwh_derived'), 'kWh')}"
-        )
         if data.get("notice") or data.get("uncertain"):
             ui.label(f"Uncertain: {data.get('notice') or data['uncertain']}").classes(
                 "text-orange-8"
@@ -743,6 +774,10 @@ def page() -> None:
             ui.label(str(data["error"])).classes("text-negative")
         if data.get("journal"):
             ui.label(f"Journal: {data['journal']}").classes("text-caption")
+
+    def refresh_workload():
+        if not explanation_dialog.value and WORKLOAD.snapshot() != last_workload["snapshot"]:
+            workload_results.refresh()
 
     async def run_workload():
         if any(value == "Running" for value in status.values()) or WORKLOAD.status == "Running":
@@ -763,6 +798,9 @@ def page() -> None:
             workload_results.refresh()
 
     ui.add_head_html(STYLE)
+    with ui.dialog() as explanation_dialog, ui.card().classes("max-h-[80vh] overflow-auto"):
+        explanation_text = ui.label("").classes("kpi-explanation")
+        ui.button("Close", on_click=explanation_dialog.close).props("flat")
     with ui.dialog() as confirm_dialog, ui.card():
         ui.label("The current bundle contains unsaved edits. Replace it?").classes("text-h6")
         ui.label("Export the bundle first to keep its changes.")
@@ -823,7 +861,7 @@ def page() -> None:
         with ui.tab_panel(real):
             ui.button("Run registered demonstration", on_click=run_workload)
             workload_results()
-            ui.timer(1.0, workload_results.refresh)
+            ui.timer(1.0, refresh_workload)
 
 
 def main() -> None:

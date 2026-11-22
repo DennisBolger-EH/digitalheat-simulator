@@ -30,8 +30,39 @@ Continue to follow the brief's ask-before-guessing and milestone approval rules.
 - M7 NiceGUI and Plotly demonstrator was accepted and committed as `75083c7`.
 - M7.1 scenario-file usability and documentation was reviewed and committed
   (latest documentation ordering commit `9543361`).
-- M7.2 multi-scenario bundle workflow is implemented and awaiting review;
+- M7.2 multi-scenario bundle workflow was reviewed and committed as `e78d66a`.
+- M7.3 explainable KPI tooltips is implemented and verified, awaiting review;
   not committed.
+
+## M7.3 KPI explanations
+
+- `application\kpi_explanations.py` constructs structured explanations
+  from run results. The shared UI renders card/row/series hover and a
+  keyboard-accessible information dialog; switching or replacing a scenario
+  clears both results and closes an open explanation. An edited configuration
+  does not alter an existing run. Before a run, **Not calculated** contains no
+  invented inputs; missing inputs remain **Unavailable**, distinct from zero.
+- `ui\kpi_inventory.py` inventories displayed result identifiers by surface,
+  excluding editable inputs, static labels, scenario identity, and status
+  metadata. Counts by surface are: primary cards 9, thermal details 11,
+  compute details 4, economic details 11, Dashboard optimization 5, chart
+  series 6, Optimization 6, Real Workload 9. These overlap across surfaces:
+  **50 unique displayed identifiers, 50 covered, zero missing**. The factories
+  support 53 identifiers in total, including three undisplayed intermediates.
+  The coverage test compares the inventory against the factories and checks
+  the Plotly trace identifiers; chart points retain their individual hover.
+- The reference heat-coverage detail shows 6,105 kWh / 31,231.015625 kWh and
+  19.548%; electricity cost shows 8,760 kWh × 0.3325 CHF/kWh. Compute income
+  reports missing sold hours and sale price. Site/time-varying tariffs are
+  explained as interval sums; unknown opening-storage origin remains unavailable.
+  Workload progress/runtime are measured and energy is estimated or derived
+  from configured reference-rack power, not metered.
+- Automated verification: 237 tests passed; Ruff lint and format checks passed.
+  Scripted Edge checks exercised primary hovers, pre-run and unavailable
+  details, all chart-series affordances, representative expanded details,
+  scenario switching, optimization and workload at emulated 1920x1080 and
+  1366x768. The user confirmed the requested manual Edge checks passed at
+  both sizes.
 
 ## M7.2 multi-scenario bundles
 

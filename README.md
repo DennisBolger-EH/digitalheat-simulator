@@ -58,6 +58,16 @@ for the input checklist, required sources, CSV editing guidance and data still
 needed for a real scenario. The template is distinct from the Reference House
 and Synthetic Complete Demo starting scenarios.
 
+### KPI explanations
+
+Hover over a result or select its information button to inspect its calculation,
+inputs, classification and relevant assumptions. Charts explain each series
+once; point hover shows the individual interval or candidate. Before a run,
+results are **Not calculated**, distinct from missing inputs and calculated zero.
+Switching scenarios clears the previous result and its explanations. Workload
+runtime and progress are measured; reference-rack electricity and gross heat
+are estimated, not meter readings.
+
 ## Scenario CSV and examples
 
 The Dashboard's **Scenario Files** card contains **Import Scenarios**,
